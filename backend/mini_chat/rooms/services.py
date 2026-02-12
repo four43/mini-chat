@@ -52,7 +52,6 @@ class ChatRoom:
                     'timestamp': row['timestamp']
                 })
 
-            print(f"[DEBUG] get_messages(room={self.room_id}, since={since}) -> {len(messages)} messages, IDs: {[m['id'] for m in messages]}")
             return messages
 
 

@@ -6,9 +6,12 @@ let currentUsername = null;
 let currentRole = null;
 let currentRoom = null;
 let lastMessageId = 0;
-let pollInterval = null;
+let websocket = null;
 let adminPollInterval = null;
 let isLoadingMessages = false;
+let reconnectAttempts = 0;
+let maxReconnectAttempts = 5;
+let reconnectTimeout = null;
 
 // Check session and redirect if not authenticated
 checkSession();
@@ -78,7 +81,11 @@ function logout() {
     localStorage.removeItem('username');
     localStorage.removeItem('role');
 
-    if (pollInterval) clearInterval(pollInterval);
+    if (websocket) {
+        websocket.close();
+        websocket = null;
+    }
+    if (reconnectTimeout) clearTimeout(reconnectTimeout);
     if (adminPollInterval) clearInterval(adminPollInterval);
 
     window.location.href = '/login.html';
@@ -361,19 +368,34 @@ function selectRoom(roomId) {
         return;
     }
 
+    // Close existing WebSocket if any
+    if (websocket) {
+        websocket.close();
+        websocket = null;
+    }
+    if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+        reconnectTimeout = null;
+    }
+
     // Switching to a different room
     currentRoom = roomId;
     lastMessageId = 0;
+    reconnectAttempts = 0;
 
     document.getElementById('chatHeader').textContent = roomId;
     document.querySelectorAll('.room-item').forEach(item => {
         item.classList.toggle('active', item.textContent === roomId);
     });
 
+    // Clear messages div when switching rooms
+    document.getElementById('messages').innerHTML = '';
+
+    // Load message history first
     loadMessages();
 
-    if (pollInterval) clearInterval(pollInterval);
-    pollInterval = setInterval(loadMessages, 2000);
+    // Then connect to WebSocket for real-time updates
+    connectWebSocket(roomId);
 
     // Auto-hide sidebar on mobile after selecting a room
     if (window.innerWidth <= 768) {
@@ -397,51 +419,124 @@ function hideSidebar() {
     overlay.classList.remove('show');
 }
 
+function connectWebSocket(roomId) {
+    // Get WebSocket URL
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsHost = window.location.host;
+    const wsUrl = `${wsProtocol}//${wsHost}/api/rooms/${encodeURIComponent(roomId)}/ws?token=${encodeURIComponent(sessionToken)}`;
+
+    console.log(`[WS] Connecting to room ${roomId}...`);
+
+    websocket = new WebSocket(wsUrl);
+
+    websocket.onopen = () => {
+        console.log(`[WS] Connected to room ${roomId}`);
+        reconnectAttempts = 0;
+    };
+
+    websocket.onmessage = (event) => {
+        try {
+            const data = JSON.parse(event.data);
+            handleWebSocketMessage(data);
+        } catch (error) {
+            console.error('[WS] Error parsing message:', error);
+        }
+    };
+
+    websocket.onerror = (error) => {
+        console.error('[WS] WebSocket error:', error);
+    };
+
+    websocket.onclose = (event) => {
+        console.log('[WS] WebSocket closed:', event.code, event.reason);
+        websocket = null;
+
+        // Attempt to reconnect if the room is still active
+        if (currentRoom === roomId && reconnectAttempts < maxReconnectAttempts) {
+            reconnectAttempts++;
+            const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 10000);
+            console.log(`[WS] Reconnecting in ${delay}ms (attempt ${reconnectAttempts}/${maxReconnectAttempts})...`);
+
+            reconnectTimeout = setTimeout(() => {
+                if (currentRoom === roomId) {
+                    connectWebSocket(roomId);
+                }
+            }, delay);
+        }
+    };
+}
+
+function handleWebSocketMessage(data) {
+    console.log('[WS] Received:', data);
+
+    switch (data.type) {
+        case 'connected':
+            console.log(`[WS] Connection confirmed for room ${data.room}`);
+            break;
+
+        case 'message':
+            displayMessage(data.data);
+            break;
+
+        case 'error':
+            console.error('[WS] Server error:', data.message);
+            break;
+
+        default:
+            console.warn('[WS] Unknown message type:', data.type);
+    }
+}
+
+function displayMessage(msg) {
+    const messagesDiv = document.getElementById('messages');
+
+    // Clear empty state if present
+    if (messagesDiv.querySelector('.empty-state')) {
+        messagesDiv.innerHTML = '';
+    }
+
+    const messageDiv = document.createElement('div');
+    messageDiv.className = 'message';
+
+    const date = new Date(msg.timestamp);
+    const timeStr = date.toLocaleTimeString();
+
+    messageDiv.innerHTML = `
+        <div class="message-header">
+            <span class="username">${escapeHtml(msg.username)}</span>
+            <span class="timestamp">${timeStr}</span>
+        </div>
+        <div class="message-text">${escapeHtml(msg.message)}</div>
+    `;
+
+    messagesDiv.appendChild(messageDiv);
+
+    // Update lastMessageId
+    if (msg.id > lastMessageId) {
+        lastMessageId = msg.id;
+    }
+
+    // Scroll to bottom
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+}
+
 async function loadMessages() {
     if (!currentRoom || isLoadingMessages) return;
 
     isLoadingMessages = true;
 
     try {
-        console.log(`[DEBUG] Fetching messages since=${lastMessageId}`);
+        console.log(`[HTTP] Loading message history since=${lastMessageId}`);
         const response = await fetch(`${API_URL}/rooms/${encodeURIComponent(currentRoom)}/messages?since=${lastMessageId}`);
         const data = await response.json();
 
         if (data.messages && data.messages.length > 0) {
-            console.log(`[DEBUG] Received ${data.messages.length} messages, IDs:`, data.messages.map(m => m.id));
-            const messagesDiv = document.getElementById('messages');
+            console.log(`[HTTP] Loaded ${data.messages.length} messages from history`);
 
-            if (lastMessageId === 0) {
-                messagesDiv.innerHTML = '';
-            }
-
-            data.messages.forEach(msg => {
-                const messageDiv = document.createElement('div');
-                messageDiv.className = 'message';
-
-                const date = new Date(msg.timestamp);
-                const timeStr = date.toLocaleTimeString();
-
-                messageDiv.innerHTML = `
-                    <div class="message-header">
-                        <span class="username">${escapeHtml(msg.username)}</span>
-                        <span class="timestamp">${timeStr}</span>
-                    </div>
-                    <div class="message-text">${escapeHtml(msg.message)}</div>
-                `;
-
-                messagesDiv.appendChild(messageDiv);
-
-                // Update lastMessageId to the highest ID we've seen
-                if (msg.id > lastMessageId) {
-                    lastMessageId = msg.id;
-                }
-            });
-
-            console.log(`[DEBUG] Updated lastMessageId to ${lastMessageId}`);
-            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            // Use displayMessage for each message
+            data.messages.forEach(msg => displayMessage(msg));
         } else {
-            console.log(`[DEBUG] No new messages`);
+            console.log(`[HTTP] No message history`);
         }
     } catch (error) {
         console.error('Error loading messages:', error);
@@ -450,7 +545,7 @@ async function loadMessages() {
     }
 }
 
-async function sendMessage() {
+function sendMessage() {
     const message = document.getElementById('messageInput').value.trim();
 
     if (!currentRoom) {
@@ -460,31 +555,22 @@ async function sendMessage() {
 
     if (!message) return;
 
+    // Check if WebSocket is connected
+    if (!websocket || websocket.readyState !== WebSocket.OPEN) {
+        alert('Not connected to chat. Reconnecting...');
+        connectWebSocket(currentRoom);
+        return;
+    }
+
     try {
-        const response = await fetch(`${API_URL}/rooms/${encodeURIComponent(currentRoom)}/messages`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${sessionToken}`
-            },
-            body: JSON.stringify({
-                message: message
-            })
-        });
+        // Send message via WebSocket
+        websocket.send(JSON.stringify({
+            type: 'message',
+            message: message
+        }));
 
-        const data = await response.json();
-
-        if (data.detail) {
-            if (data.detail === 'Unauthorized') {
-                alert('Session expired. Please login again.');
-                logout();
-            } else {
-                alert(data.detail);
-            }
-        } else {
-            document.getElementById('messageInput').value = '';
-            // Message will appear via polling interval, no need to call loadMessages manually
-        }
+        // Clear input
+        document.getElementById('messageInput').value = '';
     } catch (error) {
         console.error('Error sending message:', error);
         alert('Failed to send message');

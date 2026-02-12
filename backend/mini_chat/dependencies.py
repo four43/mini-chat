@@ -45,3 +45,19 @@ def require_admin(authorization: Optional[str] = Header(None)) -> str:
             raise HTTPException(status_code=403, detail="Admin access required")
 
     return username
+
+
+def verify_token(token: str) -> Optional[str]:
+    """Verify a token and return the username (for WebSocket auth)."""
+    try:
+        decoded = base64.urlsafe_b64decode(token).decode('utf-8')
+        username = decoded.split(':')[0]
+
+        with get_db() as conn:
+            cursor = conn.execute('SELECT username FROM users WHERE username = ?', (username,))
+            if cursor.fetchone():
+                return username
+    except:
+        pass
+
+    return None

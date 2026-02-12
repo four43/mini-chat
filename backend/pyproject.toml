@@ -11,7 +11,7 @@ keywords = [""]
 
 dependencies = [
     "fastapi",
-    "uvicorn",
+    "uvicorn[standard]",
     "pydantic",
     "requests"
 ]

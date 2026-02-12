@@ -1,5 +1,7 @@
 """Rooms API routes."""
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, WebSocket, WebSocketDisconnect
+from typing import Optional
+import json
 
 from .schemas import (
     RoomListResponse,
@@ -15,7 +17,8 @@ from .services import (
     ensure_room_exists,
     ChatRoom,
 )
-from ..dependencies import require_auth
+from .websocket import manager
+from ..dependencies import require_auth, verify_token
 
 router = APIRouter(prefix="/rooms", tags=["rooms"])
 
@@ -65,4 +68,69 @@ async def send_room_message(
     room = ChatRoom(room_id)
     message = room.add_message(username, request.message)
 
+    # Broadcast to WebSocket clients
+    await manager.broadcast_to_room(room_id, {
+        "type": "message",
+        "data": message
+    })
+
     return SendMessageResponse(status="ok", message=message)
+
+
+@router.websocket("/{room_id}/ws")
+async def websocket_endpoint(websocket: WebSocket, room_id: str, token: Optional[str] = None):
+    """WebSocket endpoint for real-time chat in a room."""
+    # Verify authentication
+    if not token:
+        await websocket.close(code=1008, reason="Authentication required")
+        return
+
+    username = verify_token(token)
+    if not username:
+        await websocket.close(code=1008, reason="Invalid token")
+        return
+
+    # Ensure room exists
+    ensure_room_exists(room_id)
+
+    # Accept connection
+    await manager.connect(websocket, room_id)
+
+    try:
+        # Send connection confirmation
+        await websocket.send_json({
+            "type": "connected",
+            "room": room_id,
+            "username": username
+        })
+
+        # Listen for messages from client
+        while True:
+            data = await websocket.receive_text()
+
+            try:
+                payload = json.loads(data)
+
+                if payload.get("type") == "message":
+                    # Save message to database
+                    room = ChatRoom(room_id)
+                    message = room.add_message(username, payload.get("message", ""))
+
+                    # Broadcast to all clients in the room
+                    await manager.broadcast_to_room(room_id, {
+                        "type": "message",
+                        "data": message
+                    })
+
+            except json.JSONDecodeError:
+                await websocket.send_json({
+                    "type": "error",
+                    "message": "Invalid JSON"
+                })
+
+    except WebSocketDisconnect:
+        manager.disconnect(websocket, room_id)
+        print(f"[WS] User {username} disconnected from room {room_id}")
+    except Exception as e:
+        print(f"[WS] Error in WebSocket connection: {e}")
+        manager.disconnect(websocket, room_id)
