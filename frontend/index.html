@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Secure Chat</title>
+</head>
+<body>
+    <!-- Login View -->
+    <div id="authView" class="auth-container">
+        <div class="auth-box">
+            <div id="loginForm">
+                <h1>🤏 Mini Chat</h1>
+                <p>Sign in with your security key</p>
+
+                <div id="authStatus"></div>
+
+                <button onclick="login()">🔑 Sign In</button>
+                <div class="divider">
+                    <span>OR</span>
+                </div>
+                <button onclick="goToRegister()">👤 Register</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="/src/login.js"></script>
+</body>
+</html>

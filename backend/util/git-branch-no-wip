@@ -1,0 +1,36 @@
+#!/bin/bash
+# Ensures a this branch doesn't have any new WIP commits. Useful in CI/CD to make sure the quality of a
+# merged in branch's commit messages.
+set -e
+
+function log_result() {
+    if [[ -n "$TEST_OUTPUT_DIR" ]]; then
+        echo "$@" > "$TEST_OUTPUT_DIR/ensure-branch-no-wip-exit-code.txt"
+    fi
+}
+
+if [[ -n "$BITBUCKET_BRANCH" ]] && [[ -n "$BITBUCKET_PR_DESTINATION_BRANCH" ]]; then
+    # Bitbucket will inject in these variables during a pull request
+    base_branch_commit_hash="$(git rev-list --boundary "origin/${BITBUCKET_BRANCH}...origin/${BITBUCKET_PR_DESTINATION_BRANCH}" | grep "^-" | cut -c2-)"
+else
+    # Not in bitbucket, check locally
+    # Todo: Assumes master is base branch of this branch
+    branch_name="$(git rev-parse --abbrev-ref HEAD)"
+    if [[ -z "$branch_name" ]]; then
+        echo "Git isn't currently on a branch" >&2
+        exit 1
+    fi
+    base_branch_commit_hash="$(git rev-list --boundary "${branch_name}...master" | grep "^-" | cut -c2-)"
+fi
+
+offending_commits="$(git log "${base_branch_commit_hash}..." --pretty='format:Commit: %H%n%s%n%b%n%n' --grep 'wip' --regexp-ignore-case)"
+
+if [[ "$(echo "${offending_commits}" | grep "\S" | wc -l)" -gt 0 ]]; then
+    echo "Found commits that have WIP in the commit messages:" >&2
+    echo "$offending_commits"
+    log_result 1
+    exit 1
+else
+    echo "No WIP commits found in your branch, nice work!" >&2
+    log_result 0
+fi

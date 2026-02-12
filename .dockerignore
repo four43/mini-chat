@@ -1,0 +1,50 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info
+dist
+build
+.pytest_cache
+.coverage
+.cache
+.mypy_cache
+.tests-output
+.venv
+artifacts
+tmp
+
+# Node
+frontend/node_modules
+frontend/dist
+frontend/.env
+frontend/.env.local
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Docs
+*.md
+
+# Data
+data/
+*.db
+*.sqlite
+*.db-wal
+*.db-shm
+
+# Docker
+docker-compose.yml
+Dockerfile
+.dockerignore

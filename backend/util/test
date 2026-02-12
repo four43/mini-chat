@@ -1,0 +1,79 @@
+#!/bin/bash
+DIR="$(dirname "$(readlink -f "$0")")"
+cd "$DIR/../" || exit 1
+
+usage="$0 [test_args]
+
+Runs python tests, via pytest and coverage for modules in pymanifest.txt
+
+Note: Exclude a line from coverage by adding '  # pragma: no cover' to the end, see:
+https://coverage.readthedocs.io/en/coverage-4.3.3/excluding.html
+
+Params:
+ - test_args - Args to pass to pytest, typically a path (relative to project root) of which tests to run.
+
+Optional Overrides:
+    \$TEST_OUTPUT_DIR - The name of the test results output directory
+    \$COVERAGE_MIN_PERCENT - The minimum percentage we can have for code coverage before we exit with an error
+"
+
+# Gets the [too.xwe_build.modules] section from pyproject.toml to see which modules we should test.
+function get_pyproj_modules() {
+    pip install toml 1>/dev/null 2>&1
+    modules="$(python -c 'import toml; print(" ".join(toml.load(open("./pyproject.toml"))["tool"]["xwe_build"]["modules"]))')"
+    if [[ "$1" == "--no-tests" ]]; then
+        # Remove test
+        echo "${modules}" | sed -E 's/ tests( \S+)?$//'
+    else
+        echo "$modules"
+    fi
+}
+
+
+if [[ "$1" == "-h" ]] || [[ "$1" == "--help" ]]; then
+    echo -e "$usage" >&2
+    exit
+fi
+
+export PYTHONPATH=".:$PYTHONPATH"
+COVERAGE_MIN_PERCENT="${COVERAGE_MIN_PERCENT:-100}"
+
+# Bitbucket looks here for output https://support.atlassian.com/bitbucket-cloud/docs/test-reporting-in-pipelines/
+test_results_dir="${TEST_OUTPUT_DIR}/test-results"
+mkdir -p "${test_results_dir}"
+
+test_coverage_scope="$(get_pyproj_modules --no-tests | tr ' ' '\n' | sed -E 's/(.*)\n?/--cov=\1 /' | tr -d '\n')"
+set -o pipefail
+python -m pytest \
+    --ignore .venv \
+    --ignore src \
+    --junitxml="${test_results_dir}/result.xml" \
+    $test_coverage_scope \
+    --cov-report=annotate:"${test_results_dir}/annotate" \
+    --cov-report=html:"${test_results_dir}/html" \
+    --cov-report=term \
+    "$@" \
+    | tee "${test_results_dir}/pytest.out.txt"
+test_status="$?"
+echo "Test output = $test_status"
+
+# Render Output Files
+set -e
+
+# Tests
+sed -E 's/^={5,}.*([0-9]+) passed.*$/\1/;t;d' "${test_results_dir}/pytest.out.txt" > ${TEST_OUTPUT_DIR}/tests-passed.txt
+sed -E 's/^={5,}.*([0-9]+) failed.*$/\1/;t;d' "${test_results_dir}/pytest.out.txt" > ${TEST_OUTPUT_DIR}/tests-failed.txt
+
+# Coverage
+# Exclude a line from coverage by adding '  # pragma: no cover' to the end
+awk '/-- coverage/{flag=1}/^TOTAL/{print;flag=0}flag' "${test_results_dir}/pytest.out.txt" >"${TEST_OUTPUT_DIR}/coverage-summary.txt"
+coverage="$(grep '^TOTAL' "${TEST_OUTPUT_DIR}/coverage-summary.txt" | sed -E 's/^TOTAL\s+[0-9]+\s+[0-9]+\s+([0-9]+)+%$/\1/')"
+echo "$coverage" >"${TEST_OUTPUT_DIR}/coverage-percent.txt"
+coverage_status=0
+if [[ "$(cat "${TEST_OUTPUT_DIR}/coverage-percent.txt")" -lt "$COVERAGE_MIN_PERCENT" ]]; then
+    coverage_status=1
+    echo "Coverage check FAILED! Coverage of $coverage was < $COVERAGE_MIN_PERCENT" >&2
+fi
+echo "$coverage_status" >"${TEST_OUTPUT_DIR}/coverage-exit-code.txt"
+echo "$test_status" >"${TEST_OUTPUT_DIR}/test-exit-code.txt"
+exit "$(($test_status + $coverage_status))"

@@ -1,0 +1,134 @@
+#!/bin/bash
+set -euo pipefail
+
+DIR="$(dirname "$(readlink -f "$0")")"
+cd "$DIR/../" || exit 1
+OUTPUT_PATH="./.tests-output/project-lint.tsv"
+mkdir -p "$(dirname "$OUTPUT_PATH")"
+
+PROJECT_TYPE="$1"
+if [[ -z "$PROJECT_TYPE" ]]; then
+    echo "Must specify project type as first argument" >&2
+    exit 1
+fi
+
+COLOR_RED="\e[31m"
+COLOR_GREEN="\e[32m"
+COLOR_YELLOW="\e[33m"
+COLOR_DEFAULT="\e[39m"
+failures=0
+
+function output_value() {
+    if [[ -n "$OUTPUT_PATH" ]]; then
+        echo -e "$*" >>"$OUTPUT_PATH"
+    fi
+}
+
+function success() {
+    echo -e "\t$COLOR_GREEN✔$COLOR_DEFAULT $*"
+    output_value "$*\ttrue"
+}
+
+function failure() {
+    echo -e "\t$COLOR_RED✖ $* $COLOR_DEFAULT"
+    failures=$((failures + 1))
+    output_value "$*\tfalse"
+}
+
+function skip() {
+    echo -e "\t$COLOR_YELLOW➖$COLOR_DEFAULT $*"
+    output_value "$*\ttrue"
+}
+
+function ensure_util_dir() {
+    if [[ -d "./util" ]]; then
+        success "Has ./util directory"
+    else
+        failure "Missing ./util directory"
+    fi
+}
+
+function ensure_util_test() {
+    if [[ -x "./util/test" ]]; then
+        success "Has ./util/test file to run tests"
+    else
+        failure "Missing (or not executable) ./util/test file to run tests"
+    fi
+}
+
+function ensure_util_lint() {
+    if [[ -x "./util/lint" ]]; then
+        success "Has ./util/lint to lint repo"
+    else
+        failure "Missing (or not executable) ./util/lint lint repo"
+    fi
+}
+
+function ensure_git_master_branch() {
+    # In CI, a single branch is checked out - work around that and get the rest.
+    git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*" 2>/dev/null
+    git fetch  2>/dev/null
+    if git branch -a | grep 'origin/master$' 1>/dev/null 2>&1; then
+        success "Has master branch"
+    else
+        failure "Primary branch should be \"master\""
+    fi
+}
+
+function ensure_project_name() {
+    case $PROJECT_TYPE in
+    funnel-import)
+        # Ensure project name is specifically fetcher (pulling data from a source) or listener (listening to events from
+        # a remote source)
+        if [[ "$remote_name" =~ ^[a-z0-9]+-[a-z0-9\-]+-(fetcher|listener)$ ]]; then
+            success "Project name \"$remote_name\" matches [dataOrigin]-[products]-(fetcher|listener) pattern"
+        else
+            failure "Project name \"$remote_name\" should match [dataOrigin]-[products]-(fetcher|listener) pattern"
+        fi
+        ;;
+    particle)
+        # Particle really just has the particle-api
+        if [[ "$remote_name" == "particle-api" ]]; then
+            success "Project name \"$remote_name\" is particle-api"
+        else
+            failure "Project name \"$remote_name\" can only be particle-api. That's the only project in here for now."
+        fi
+        ;;
+    particle-data-flow)
+        # Particle really just has the particle-api
+        if [[ "$remote_name" =~ ^particle-data-flow-[a-z0-9\-]+$ ]]; then
+            success "Project name \"$remote_name\" matches particle-data-flow-*"
+        else
+            failure "Project name \"$remote_name\" doesn't match particle-data-flow-*"
+        fi
+        ;;
+    general)
+        skip "Not linting project name for 'general' type project"
+        ;;
+    *)
+        echo "No project type by that name" >&2
+        exit 1
+        ;;
+    esac
+}
+
+function ensure_docker() {
+    if [[ -f "./Dockerfile" ]] && [[ -f "./docker-compose.yml" ]]; then
+        success "Has Dockerfile and docker-compose.yml"
+    else
+        failure "Missing Dockerfile or docker-compose.yml"
+    fi
+}
+
+remote_name="$(git remote get-url origin | sed 's#^.*/##' | sed 's#\.git$##')"
+
+echo "Linting project:"
+
+ensure_project_name
+ensure_git_master_branch
+ensure_util_dir
+ensure_util_test
+ensure_util_lint
+ensure_docker
+
+exit $failures

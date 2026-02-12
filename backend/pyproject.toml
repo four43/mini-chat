@@ -1,0 +1,31 @@
+[project]
+name = "mini_chat"
+version = "0.0.1"
+authors = [
+    { name = "Seth Miller", email = "seth@four43.com" }
+]
+readme = "README.md"
+requires-python = ">=3.12"
+
+keywords = [""]
+
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "pydantic",
+    "requests"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+]
+
+[tool.setuptools.packages.find]
+include = ["mini_chat*"]
+
+[tool.xwe_build]
+modules = [
+    "mini_chat",
+    "tests",
+]

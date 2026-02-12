@@ -1,0 +1,124 @@
+"""Authentication API routes."""
+from fastapi import APIRouter, HTTPException, Depends
+from typing import Optional
+
+from .schemas import (
+    RegistrationBeginResponse,
+    RegistrationCompleteRequest,
+    RegistrationCompleteResponse,
+    LoginBeginResponse,
+    LoginCompleteRequest,
+    LoginCompleteResponse,
+    SessionResponse,
+)
+from .services import (
+    generate_challenge,
+    store_challenge,
+    verify_challenge,
+    is_registration_enabled,
+    create_pending_user,
+    get_user_credentials,
+    get_user_by_credential,
+    create_session_token,
+    get_user_from_session,
+)
+from ..dependencies import get_username_from_token
+
+router = APIRouter(prefix="/auth", tags=["authentication"])
+
+
+@router.get("/register/begin", response_model=RegistrationBeginResponse)
+async def begin_registration():
+    """Begin WebAuthn registration process."""
+    if not is_registration_enabled():
+        raise HTTPException(status_code=403, detail="Registration is currently disabled")
+
+    challenge = generate_challenge()
+    store_challenge(challenge, 'registration')
+
+    return RegistrationBeginResponse(
+        challenge=challenge,
+        rp={'name': 'Secure Chat', 'id': 'localhost'}
+    )
+
+
+@router.post("/register/complete", response_model=RegistrationCompleteResponse)
+async def complete_registration(request: RegistrationCompleteRequest):
+    """Complete WebAuthn registration."""
+    if not is_registration_enabled():
+        raise HTTPException(status_code=403, detail="Registration is currently disabled")
+
+    if not verify_challenge(request.challenge, 'registration'):
+        raise HTTPException(status_code=400, detail="Invalid or expired challenge")
+
+    try:
+        approval_code, is_auto_approved = create_pending_user(
+            request.username,
+            request.credentialId,
+            request.publicKey
+        )
+
+        if is_auto_approved:
+            return RegistrationCompleteResponse(
+                status='approved',
+                approval_code='FIRST_USER_AUTO_APPROVED'
+            )
+        else:
+            return RegistrationCompleteResponse(
+                status='pending',
+                approval_code=approval_code
+            )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Registration failed: {str(e)}")
+
+
+@router.get("/login/begin", response_model=LoginBeginResponse)
+async def begin_login():
+    """Begin WebAuthn login process - usernameless flow."""
+    challenge = generate_challenge()
+    store_challenge(challenge, 'login', None)
+
+    # Empty allowCredentials means any credential can be used (discoverable credentials)
+    return LoginBeginResponse(
+        challenge=challenge,
+        allowCredentials=[]
+    )
+
+
+@router.post("/login/complete", response_model=LoginCompleteResponse)
+async def complete_login(request: LoginCompleteRequest):
+    """Complete WebAuthn login - identifies user by credential."""
+    if not verify_challenge(request.challenge, 'login', None):
+        raise HTTPException(status_code=400, detail="Invalid or expired challenge")
+
+    # Identify user by their credential ID
+    user = get_user_by_credential(request.credentialId)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found or not approved")
+
+    session_token = create_session_token(user['username'])
+
+    return LoginCompleteResponse(
+        status='ok',
+        session_token=session_token,
+        username=user['username'],
+        role=user['role']
+    )
+
+
+@router.get("/session", response_model=SessionResponse)
+async def check_session(username: Optional[str] = Depends(get_username_from_token)):
+    """Check if session is valid."""
+    if username:
+        from ..database import get_db
+        with get_db() as conn:
+            cursor = conn.execute('SELECT role FROM users WHERE username = ?', (username,))
+            row = cursor.fetchone()
+            if row:
+                return SessionResponse(
+                    authenticated=True,
+                    username=username,
+                    role=row['role']
+                )
+
+    return SessionResponse(authenticated=False)

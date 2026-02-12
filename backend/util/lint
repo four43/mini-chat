@@ -1,0 +1,81 @@
+#!/bin/bash
+DIR="$(dirname "$(readlink -f "$0")")"
+cd "$DIR/../" || exit 1
+
+usage="$0
+
+Run linting for project using black and mypy.
+"
+
+# Gets the [too.xwe_build.modules] section from pyproject.toml to see which modules we should test.
+function get_pyproj_modules() {
+    pip install toml 1>/dev/null 2>&1
+    modules="$(python -c 'import toml; print(" ".join(toml.load(open("./pyproject.toml"))["tool"]["xwe_build"]["modules"]))')"
+    if [[ "$1" == "--no-tests" ]]; then
+        # Remove test
+        echo "${modules}" | sed -E 's/ tests( \S+)?$//'
+    else
+        echo "$modules"
+    fi
+}
+
+
+ARGS=("$@")
+while [[ "${#ARGS[@]}" -gt 0 ]]; do
+    found_split=0
+    key="${ARGS[0]}"
+    value="${ARGS[1]}"
+
+    case "${key}" in
+    -h | --help)
+        echo "$usage" >&2
+        exit 0
+        ;;
+    --namespace-packages)
+        namespace_packages=1
+        ARGS=("${ARGS[@]:1}")
+        ;;
+    *) # Unknown Option or "key=value"
+        while IFS='=' read -ra split <<<"${key}"; do
+            # Split by the "=" and add back to our arguments array
+            for i in "${split[@]}"; do
+                ARGS+=("${i}")
+            done
+            found_split=1
+            ARGS=("${ARGS[@]:1}")
+            break
+        done
+        if [[ -z "${found_split}" ]]; then
+            echo "Unknown option $1"
+            echo "${usage}"
+            exit 1
+        fi
+        ;;
+    --)
+        ARGS=("${ARGS[@]:1}")
+        break
+        ;;
+    esac
+done
+
+no_namespace_packages="--no-namespace-packages"
+if [[ "$namespace_packages" == 1 ]]; then
+    no_namespace_packages=""
+fi
+
+function count_error() {
+    if ! "$@"; then
+        errors=$((errors + 1))
+    fi
+}
+export PYTHONPATH=.
+errors=0
+
+echo "Running black for linting..." >&2
+count_error python -m black --check $(get_pyproj_modules)
+
+echo "Running mypy for type checking..." >&2
+count_error python -m mypy --disallow-untyped-defs --ignore-missing-imports $no_namespace_packages $(get_pyproj_modules --no-tests)
+
+echo "$errors" >"${TEST_OUTPUT_DIR}/lint-exit-code.txt"
+exit $errors

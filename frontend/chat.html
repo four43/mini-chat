@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat - Secure Chat</title>
+</head>
+<body>
+    <!-- Chat View -->
+    <div id="chatView" class="container">
+        <div class="header">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <button class="menu-toggle" onclick="toggleSidebar()">☰</button>
+                <h1>Secure Chat</h1>
+            </div>
+            <div class="user-info">
+                <span id="currentUser"></span>
+                <span id="adminBadge" class="admin-badge hidden">ADMIN</span>
+                <button id="adminPanelBtn" class="admin-btn hidden" onclick="toggleAdminPanel()">Admin Panel</button>
+                <button class="logout-btn" onclick="logout()">Logout</button>
+            </div>
+        </div>
+
+        <div class="main">
+            <div class="sidebar">
+                <div class="sidebar-header">Chat Rooms</div>
+                <div class="room-list" id="roomList"></div>
+                <div class="create-room">
+                    <input type="text" id="newRoomInput" placeholder="Room name">
+                    <button onclick="createRoom()">Create Room</button>
+                </div>
+            </div>
+
+            <!-- Sidebar Overlay for Mobile -->
+            <div class="sidebar-overlay" onclick="toggleSidebar()"></div>
+
+            <div class="chat-area">
+                <div class="chat-header" id="chatHeader">[No room selected]</div>
+                <div class="messages" id="messages">
+                    <div class="empty-state">
+                        <p>Select a chat room to start</p>
+                        <p class="mobile-hint" style="font-size: 12px; margin-top: 10px; color: #999;">Tap ☰ to see rooms</p>
+                    </div>
+                </div>
+                <div class="input-area">
+                    <input type="text" id="messageInput" class="message-input" placeholder="Type a message...">
+                    <button class="send-button" onclick="sendMessage()">Send</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Admin Panel -->
+    <div id="adminPanel" class="admin-panel">
+        <div class="admin-panel-header">
+            <h2>👑 Admin Panel</h2>
+            <button class="close-btn" onclick="toggleAdminPanel()">✕</button>
+        </div>
+
+        <div class="admin-section">
+            <h3>Registration Control</h3>
+            <div class="toggle-registration">
+                <div id="regToggle" class="toggle-switch" onclick="toggleRegistration()"></div>
+                <span id="regStatus">Registration Disabled</span>
+            </div>
+            <p style="font-size: 12px; color: #666;">Enable registration temporarily when friends are nearby</p>
+        </div>
+
+        <div class="admin-section">
+            <h3>Pending Approvals (<span id="pendingCount">0</span>)</h3>
+            <div id="pendingList"></div>
+        </div>
+
+        <div class="admin-section">
+            <h3>All Users (<span id="userCount">0</span>)</h3>
+            <div id="usersList"></div>
+        </div>
+    </div>
+
+    <script type="module" src="/src/chat.js"></script>
+</body>
+</html>

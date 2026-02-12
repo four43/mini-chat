@@ -1,0 +1,14 @@
+services:
+  app:
+    volumes:
+      - ./:/workspace
+      - /tmp/app-container:/tmp:rw
+      - ./.cache/.vscode-server-extension:/root/.vscode-server/extensions
+      - /var/cache/apt:/var/cache/apt
+      - ~/.gitconfig:/root/.gitconfig:ro
+      - ~/.ssh/config:/root/.ssh-tmp/config:ro
+    environment:
+      - PYTHONPATH=/workspace
+      - PYDEVD_WARN_EVALUATION_TIMEOUT=30
+    entrypoint: ""
+    command:    sleep infinity

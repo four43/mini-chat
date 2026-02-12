@@ -1,0 +1,38 @@
+services:
+  app:
+    build:
+      context: .
+      secrets:
+        - github_token
+      ssh:
+        - default
+    image: mini-chat:latest
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount backend for development hot-reload
+      - ./backend:/app
+      # Mount database to persist data
+      - ./data:/data
+      # Allow us to map in /tmp
+      - "${BITBUCKET_CLONE_DIR:-/tmp}:/tmp"
+    environment:
+      - PYTHONUNBUFFERED=1
+    entrypoint: ""
+    command: ["python", "-m", "uvicorn", "mini_chat.chat_server_webauthn:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+  # Optional: Frontend dev server for development
+  frontend-dev:
+    image: node:20-slim
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+    ports:
+      - "5173:5173"
+    command: sh -c "npm install && npm run dev -- --host"
+    profiles:
+      - dev
+
+secrets:
+  github_token:
+    environment: GITHUB_TOKEN
