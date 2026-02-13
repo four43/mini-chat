@@ -93,6 +93,26 @@ def init_db():
             ON messages(room_id, id)
         ''')
 
+        # Rooms table
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS rooms (
+                room_id TEXT PRIMARY KEY,
+                created_at TEXT NOT NULL,
+                deleted BOOLEAN NOT NULL DEFAULT 0,
+                deleted_at TEXT,
+                deleted_by TEXT
+            )
+        ''')
+
+        # User preferences table
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS user_preferences (
+                username TEXT PRIMARY KEY,
+                color TEXT NOT NULL DEFAULT '#1976d2',
+                FOREIGN KEY (username) REFERENCES users(username) ON DELETE CASCADE
+            )
+        ''')
+
         # Set default settings - registration enabled by default
         cursor = conn.execute("SELECT value FROM settings WHERE key = 'registration_enabled'")
         if not cursor.fetchone():

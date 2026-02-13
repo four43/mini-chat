@@ -28,6 +28,16 @@ export function base64ToArrayBuffer(base64) {
     return bytes.buffer;
 }
 
+export function friendlyError(error) {
+    if (error instanceof TypeError && error.message === 'Failed to fetch') {
+        return 'Could not connect to the server. Please try again later.';
+    }
+    if (error instanceof SyntaxError && error.message.includes('JSON')) {
+        return 'Could not connect to the server. Please try again later.';
+    }
+    return error.message;
+}
+
 export function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;

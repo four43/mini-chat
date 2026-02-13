@@ -24,5 +24,5 @@ CORS_ALLOW_METHODS = ["*"]
 CORS_ALLOW_HEADERS = ["*"]
 
 # Application settings
-APP_TITLE = "Secure Chat Server"
+APP_TITLE = "Mini-Chat Server"
 APP_VERSION = "1.0.0"

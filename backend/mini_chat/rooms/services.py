@@ -58,10 +58,28 @@ class ChatRoom:
 def load_rooms_from_db():
     """Load existing rooms from database."""
     with get_db() as conn:
-        cursor = conn.execute('SELECT DISTINCT room_id FROM messages')
+        # Load rooms from the rooms table (non-deleted only)
+        cursor = conn.execute('SELECT room_id FROM rooms WHERE deleted = 0')
         with ROOMS_LOCK:
             for row in cursor:
                 ROOMS.add(row['room_id'])
+
+        # Also pick up any rooms that exist in messages but not in the rooms table
+        cursor = conn.execute('''
+            SELECT DISTINCT m.room_id FROM messages m
+            LEFT JOIN rooms r ON m.room_id = r.room_id
+            WHERE r.room_id IS NULL
+        ''')
+        now = datetime.now().isoformat()
+        for row in cursor:
+            room_id = row['room_id']
+            conn.execute(
+                'INSERT INTO rooms (room_id, created_at) VALUES (?, ?)',
+                (room_id, now)
+            )
+            with ROOMS_LOCK:
+                ROOMS.add(room_id)
+        conn.commit()
 
 
 def get_all_rooms() -> List[str]:
@@ -76,7 +94,32 @@ def create_room(room_id: str) -> bool:
         if room_id in ROOMS:
             return False
         ROOMS.add(room_id)
-        return True
+
+    now = datetime.now().isoformat()
+    with get_db() as conn:
+        conn.execute(
+            'INSERT OR IGNORE INTO rooms (room_id, created_at) VALUES (?, ?)',
+            (room_id, now)
+        )
+        conn.commit()
+    return True
+
+
+def delete_room(room_id: str, deleted_by: str) -> bool:
+    """Soft-delete a room."""
+    with ROOMS_LOCK:
+        if room_id not in ROOMS:
+            return False
+        ROOMS.discard(room_id)
+
+    now = datetime.now().isoformat()
+    with get_db() as conn:
+        conn.execute(
+            'UPDATE rooms SET deleted = 1, deleted_at = ?, deleted_by = ? WHERE room_id = ?',
+            (now, deleted_by, room_id)
+        )
+        conn.commit()
+    return True
 
 
 def room_exists(room_id: str) -> bool:

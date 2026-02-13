@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chat - Secure Chat</title>
+    <title>Mini-Chat</title>
 </head>
 <body>
     <!-- Chat View -->
@@ -11,7 +11,7 @@
         <div class="header">
             <div style="display: flex; align-items: center; gap: 10px;">
                 <button class="menu-toggle" onclick="toggleSidebar()">☰</button>
-                <h1>Secure Chat</h1>
+                <h1>Mini-Chat</h1>
             </div>
             <div class="user-info">
                 <span id="currentUser"></span>
@@ -23,11 +23,13 @@
 
         <div class="main">
             <div class="sidebar">
-                <div class="sidebar-header">Chat Rooms</div>
+                <div class="sidebar-header">
+                    <span>Chat Rooms</span>
+                    <button class="add-room-btn" onclick="openCreateRoomModal()" title="Create room">+</button>
+                </div>
                 <div class="room-list" id="roomList"></div>
-                <div class="create-room">
-                    <input type="text" id="newRoomInput" placeholder="Room name">
-                    <button onclick="createRoom()">Create Room</button>
+                <div class="sidebar-footer">
+                    <button class="sidebar-settings-btn" onclick="toggleSettingsPanel()">⚙️ Settings</button>
                 </div>
             </div>
 
@@ -74,6 +76,67 @@
         <div class="admin-section">
             <h3>All Users (<span id="userCount">0</span>)</h3>
             <div id="usersList"></div>
+        </div>
+
+        <div class="admin-section">
+            <h3>User Preferences</h3>
+            <div id="userPreferencesList"></div>
+        </div>
+    </div>
+
+    <!-- Settings Panel -->
+    <div id="settingsPanel" class="settings-panel">
+        <div class="settings-panel-header">
+            <h2>⚙️ Settings</h2>
+            <button class="close-btn" onclick="toggleSettingsPanel()">✕</button>
+        </div>
+
+        <div class="settings-section">
+            <h3>Display Preferences</h3>
+            <div class="preference-item">
+                <label for="userColor">Your username color:</label>
+                <input type="color" id="userColor" value="#1976d2" onchange="updateUserColor()">
+            </div>
+        </div>
+    </div>
+
+    <!-- Room Settings Modal -->
+    <div id="roomSettingsModal" class="room-settings-modal">
+        <div class="room-settings-backdrop" onclick="closeRoomSettings()"></div>
+        <div class="room-settings-content">
+            <div class="room-settings-header">
+                <h3>Room Settings</h3>
+                <button class="close-btn" onclick="closeRoomSettings()">&times;</button>
+            </div>
+            <div class="room-settings-body">
+                <div class="room-settings-name-row">
+                    <span class="room-settings-label">Room name:</span>
+                    <span id="roomSettingsName" class="room-settings-value"></span>
+                </div>
+                <div class="room-settings-danger">
+                    <h4>Danger Zone</h4>
+                    <p>Deleting a room hides it from the room list. Messages are preserved.</p>
+                    <button class="delete-btn" onclick="deleteRoomAction()">Delete Room</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Room Modal -->
+    <div id="createRoomModal" class="room-settings-modal">
+        <div class="room-settings-backdrop" onclick="closeCreateRoomModal()"></div>
+        <div class="room-settings-content">
+            <div class="room-settings-header">
+                <h3>Create Room</h3>
+                <button class="close-btn" onclick="closeCreateRoomModal()">&times;</button>
+            </div>
+            <div class="room-settings-body">
+                <div class="form-group">
+                    <label for="newRoomInput">Room name</label>
+                    <input type="text" id="newRoomInput" placeholder="Enter room name">
+                </div>
+                <button class="create-room-submit-btn" onclick="createRoom()">Create</button>
+            </div>
         </div>
     </div>
 

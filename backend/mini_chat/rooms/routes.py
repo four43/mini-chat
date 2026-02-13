@@ -10,15 +10,17 @@ from .schemas import (
     SendMessageRequest,
     SendMessageResponse,
     MessagesResponse,
+    DeleteRoomResponse,
 )
 from .services import (
     get_all_rooms,
     create_room,
+    delete_room,
     ensure_room_exists,
     ChatRoom,
 )
 from .websocket import manager
-from ..dependencies import require_auth, verify_token
+from ..dependencies import require_auth, require_admin, verify_token
 
 router = APIRouter(prefix="/rooms", tags=["rooms"])
 
@@ -75,6 +77,18 @@ async def send_room_message(
     })
 
     return SendMessageResponse(status="ok", message=message)
+
+
+@router.delete("/{room_id}", response_model=DeleteRoomResponse)
+async def delete_room_endpoint(
+    room_id: str,
+    username: str = Depends(require_admin)
+):
+    """Soft-delete a chat room (admin only)."""
+    if not delete_room(room_id, username):
+        raise HTTPException(status_code=404, detail="Room not found")
+
+    return DeleteRoomResponse(status="ok", room_id=room_id)
 
 
 @router.websocket("/{room_id}/ws")

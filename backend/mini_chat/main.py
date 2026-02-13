@@ -24,7 +24,8 @@ from .rooms.services import load_rooms_from_db
 from .auth.routes import router as auth_router
 from .rooms.routes import router as rooms_router
 from .messages.routes import router as messages_router
-from .admin.routes import router as admin_router
+from .server.routes import router as server_router
+from .users.routes import router as preferences_router
 
 # Create FastAPI app
 app = FastAPI(title=APP_TITLE, version=APP_VERSION)
@@ -70,7 +71,8 @@ async def startup_event():
 app.include_router(auth_router, prefix="/api")
 app.include_router(rooms_router, prefix="/api")
 app.include_router(messages_router, prefix="/api")
-app.include_router(admin_router, prefix="/api")
+app.include_router(server_router, prefix="/api")
+app.include_router(preferences_router, prefix="/api")
 
 
 @app.get("/")

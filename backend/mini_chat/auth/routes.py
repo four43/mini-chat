@@ -38,7 +38,7 @@ async def begin_registration():
 
     return RegistrationBeginResponse(
         challenge=challenge,
-        rp={'name': 'Secure Chat', 'id': 'localhost'}
+        rp={'name': 'Mini-Chat', 'id': 'localhost'}
     )
 
 

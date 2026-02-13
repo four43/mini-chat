@@ -1,5 +1,5 @@
 import './style.css';
-import { API_URL, showStatus, arrayBufferToBase64, base64ToArrayBuffer } from './utils.js';
+import { API_URL, showStatus, arrayBufferToBase64, base64ToArrayBuffer, friendlyError } from './utils.js';
 
 async function register() {
     const username = document.getElementById('registerUsername').value.trim();
@@ -94,7 +94,7 @@ async function register() {
 
     } catch (error) {
         console.error(error);
-        showStatus('registerStatus', `❌ Registration failed: ${error.message}`, 'error');
+        showStatus('registerStatus', `❌ ${friendlyError(error)}`, 'error');
     }
 }
 

@@ -120,7 +120,7 @@ async function register() {
 
     } catch (error) {
         console.error(error);
-        showStatus('registerStatus', `❌ Registration failed: ${error.message}`, 'error');
+        showStatus('registerStatus', `❌ ${friendlyError(error)}`, 'error');
     }
 }
 
@@ -174,7 +174,7 @@ async function login() {
 
     } catch (error) {
         console.error(error);
-        showStatus('authStatus', `❌ Login failed: ${error.message}`, 'error');
+        showStatus('authStatus', `❌ ${friendlyError(error)}`, 'error');
     }
 }
 
@@ -245,7 +245,7 @@ function toggleAdminPanel() {
 
 async function loadAdminSettings() {
     try {
-        const resp = await fetch(`${API_URL}/admin/settings`, {
+        const resp = await fetch(`${API_URL}/server`, {
             headers: { 'Authorization': `Bearer ${sessionToken}` }
         });
         const data = await resp.json();
@@ -276,8 +276,8 @@ async function toggleRegistration() {
     const enabled = !toggle.classList.contains('active');
 
     try {
-        const resp = await fetch(`${API_URL}/admin/toggle-registration`, {
-            method: 'POST',
+        const resp = await fetch(`${API_URL}/server/registration`, {
+            method: 'PUT',
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${sessionToken}`
@@ -294,7 +294,7 @@ async function toggleRegistration() {
 
 async function loadPendingUsers() {
     try {
-        const resp = await fetch(`${API_URL}/admin/pending`, {
+        const resp = await fetch(`${API_URL}/users/pending`, {
             headers: { 'Authorization': `Bearer ${sessionToken}` }
         });
         const data = await resp.json();
@@ -326,7 +326,7 @@ async function loadPendingUsers() {
 
 async function approveUser(code) {
     try {
-        const resp = await fetch(`${API_URL}/admin/approve`, {
+        const resp = await fetch(`${API_URL}/users/pending/approve`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -346,7 +346,7 @@ async function approveUser(code) {
 
 async function rejectUser(code) {
     try {
-        const resp = await fetch(`${API_URL}/admin/reject`, {
+        const resp = await fetch(`${API_URL}/users/pending/reject`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -365,7 +365,7 @@ async function rejectUser(code) {
 
 async function loadAllUsers() {
     try {
-        const resp = await fetch(`${API_URL}/admin/users`, {
+        const resp = await fetch(`${API_URL}/users`, {
             headers: { 'Authorization': `Bearer ${sessionToken}` }
         });
         const data = await resp.json();
@@ -408,13 +408,13 @@ async function setUserRole(username, role) {
     }
 
     try {
-        const resp = await fetch(`${API_URL}/admin/set-role`, {
-            method: 'POST',
+        const resp = await fetch(`${API_URL}/users/${encodeURIComponent(username)}/role`, {
+            method: 'PUT',
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${sessionToken}`
             },
-            body: JSON.stringify({ username, role })
+            body: JSON.stringify({ role })
         });
 
         if (resp.ok) {
@@ -435,7 +435,7 @@ async function deleteUser(username) {
     }
 
     try {
-        const resp = await fetch(`${API_URL}/admin/revoke/${encodeURIComponent(username)}`, {
+        const resp = await fetch(`${API_URL}/users/${encodeURIComponent(username)}`, {
             method: 'DELETE',
             headers: { 'Authorization': `Bearer ${sessionToken}` }
         });

@@ -35,3 +35,8 @@ class SendMessageResponse(BaseModel):
 class MessagesResponse(BaseModel):
     status: str
     messages: List[MessageResponse]
+
+
+class DeleteRoomResponse(BaseModel):
+    status: str
+    room_id: str

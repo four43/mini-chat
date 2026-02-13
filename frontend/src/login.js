@@ -1,5 +1,5 @@
 import './style.css';
-import { API_URL, showStatus, arrayBufferToBase64, base64ToArrayBuffer } from './utils.js';
+import { API_URL, showStatus, arrayBufferToBase64, base64ToArrayBuffer, friendlyError } from './utils.js';
 
 // Check if already logged in
 checkSession();
@@ -80,7 +80,7 @@ async function login() {
 
     } catch (error) {
         console.error(error);
-        showStatus('authStatus', `❌ Login failed: ${error.message}`, 'error');
+        showStatus('authStatus', `❌ ${friendlyError(error)}`, 'error');
     }
 }
 

@@ -60,6 +60,7 @@ backend/mini_chat/
 |--------|----------|-------------|
 | GET | `/rooms` | List all rooms |
 | POST | `/rooms` | Create a new room |
+| DELETE | `/rooms/{room_id}` | Soft-delete a room (admin only) |
 | GET | `/rooms/{room_id}/messages` | Get messages in a room |
 | POST | `/rooms/{room_id}/messages` | Send message to a room |
 
