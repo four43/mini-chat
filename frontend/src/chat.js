@@ -15,6 +15,9 @@ let reconnectTimeout = null;
 let userColors = {};  // Cache of username -> color mappings
 let serverColor = '#6366f1';  // Cached server color for theme reset
 let currentRegMode = 'closed';  // Current registration mode
+let roomMeta = {};  // Cache of room_id -> { room_type, display_name, members }
+let roomsWs = null;  // WebSocket subscription for room list updates
+let roomsWsReconnectTimeout = null;
 
 // Load server theme immediately (before auth check) so page renders with correct color
 loadAndApplyTheme().then(color => { serverColor = color; });
@@ -70,6 +73,7 @@ async function initializeChatView() {
     }
 
     await loadRooms();
+    connectRoomsSubscription();
 
     // Navigate to room from hash if present
     const roomFromHash = getRoomFromHash();
@@ -106,7 +110,12 @@ function logout() {
         websocket.close();
         websocket = null;
     }
+    if (roomsWs) {
+        roomsWs.close();
+        roomsWs = null;
+    }
     if (reconnectTimeout) clearTimeout(reconnectTimeout);
+    if (roomsWsReconnectTimeout) clearTimeout(roomsWsReconnectTimeout);
     if (adminPollInterval) clearInterval(adminPollInterval);
 
     history.replaceState(null, '', window.location.pathname);
@@ -653,40 +662,108 @@ async function updateUserColorAdmin(username) {
 
 async function loadRooms() {
     try {
-        const response = await fetch(`${API_URL}/rooms`);
+        const response = await fetch(`${API_URL}/rooms`, {
+            headers: { 'Authorization': `Bearer ${sessionToken}` }
+        });
         const data = await response.json();
 
-        const roomList = document.getElementById('roomList');
-        roomList.innerHTML = '';
+        const channelList = document.getElementById('channelList');
+        const dmList = document.getElementById('dmList');
+        channelList.innerHTML = '';
+        dmList.innerHTML = '';
 
+        // Update room metadata cache
+        roomMeta = {};
         data.rooms.forEach(room => {
-            const item = document.createElement('div');
-            item.className = 'room-item';
+            roomMeta[room.room_id] = room;
+        });
 
-            const nameSpan = document.createElement('span');
-            nameSpan.className = 'room-name';
-            nameSpan.textContent = room;
-            nameSpan.onclick = () => selectRoom(room);
+        const channels = data.rooms.filter(r => r.room_type === 'channel');
+        const dms = data.rooms.filter(r => r.room_type === 'dm');
 
-            item.appendChild(nameSpan);
+        channels.forEach(room => {
+            channelList.appendChild(createRoomItem(room));
+        });
 
-            if (currentRole === 'admin') {
-                const settingsBtn = document.createElement('button');
-                settingsBtn.className = 'room-settings-btn';
-                settingsBtn.textContent = '\u2699';
-                settingsBtn.title = 'Room settings';
-                settingsBtn.onclick = (e) => {
-                    e.stopPropagation();
-                    openRoomSettings(room);
-                };
-                item.appendChild(settingsBtn);
-            }
-
-            roomList.appendChild(item);
+        dms.forEach(room => {
+            dmList.appendChild(createRoomItem(room));
         });
     } catch (error) {
         console.error('Error loading rooms:', error);
     }
+}
+
+function createRoomItem(room) {
+    const item = document.createElement('div');
+    item.className = 'room-item';
+    item.dataset.roomId = room.room_id;
+    if (currentRoom === room.room_id) {
+        item.classList.add('active');
+    }
+
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'room-name';
+    nameSpan.textContent = room.display_name;
+    nameSpan.onclick = () => selectRoom(room.room_id);
+
+    item.appendChild(nameSpan);
+
+    if (currentRole === 'admin' && room.room_type === 'channel') {
+        const settingsBtn = document.createElement('button');
+        settingsBtn.className = 'room-settings-btn';
+        settingsBtn.textContent = '\u2699';
+        settingsBtn.title = 'Room settings';
+        settingsBtn.onclick = (e) => {
+            e.stopPropagation();
+            openRoomSettings(room.room_id);
+        };
+        item.appendChild(settingsBtn);
+    }
+
+    return item;
+}
+
+function connectRoomsSubscription() {
+    if (roomsWs) {
+        roomsWs.close();
+        roomsWs = null;
+    }
+
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsHost = window.location.host;
+    const wsUrl = `${wsProtocol}//${wsHost}/api/rooms?token=${encodeURIComponent(sessionToken)}`;
+
+    console.log('[WS:rooms] Connecting to room list subscription...');
+    roomsWs = new WebSocket(wsUrl);
+
+    roomsWs.onopen = () => {
+        console.log('[WS:rooms] Connected');
+    };
+
+    roomsWs.onmessage = (event) => {
+        try {
+            const data = JSON.parse(event.data);
+            if (data.type === 'update') {
+                console.log('[WS:rooms] Room list updated, reloading...');
+                loadRooms();
+            }
+        } catch (error) {
+            console.error('[WS:rooms] Error parsing message:', error);
+        }
+    };
+
+    roomsWs.onclose = () => {
+        console.log('[WS:rooms] Disconnected');
+        roomsWs = null;
+        // Reconnect after a delay if we're still logged in
+        if (sessionToken) {
+            roomsWsReconnectTimeout = setTimeout(connectRoomsSubscription, 5000);
+        }
+    };
+
+    roomsWs.onerror = (error) => {
+        console.error('[WS:rooms] Error:', error);
+    };
 }
 
 function openCreateRoomModal() {
@@ -704,10 +781,15 @@ function closeCreateRoomModal() {
 
 async function createRoom() {
     const input = document.getElementById('newRoomInput');
-    const roomId = input.value.trim();
+    const roomId = input.value.trim().toLowerCase();
 
     if (!roomId) {
-        alert('Please enter a room name');
+        alert('Please enter a channel name');
+        return;
+    }
+
+    if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(roomId)) {
+        alert('Channel name must be lowercase letters, numbers, and hyphens only (e.g. "my-channel")');
         return;
     }
 
@@ -728,7 +810,7 @@ async function createRoom() {
         } else {
             input.value = '';
             closeCreateRoomModal();
-            loadRooms();
+            await loadRooms();
             selectRoom(roomId);
         }
     } catch (error) {
@@ -770,9 +852,13 @@ function selectRoom(roomId) {
     // Update URL hash
     window.location.hash = `#/r/${encodeURIComponent(roomId)}`;
 
-    document.getElementById('chatHeader').textContent = roomId;
+    // Use display_name from metadata for header
+    const meta = roomMeta[roomId];
+    const displayName = meta ? meta.display_name : roomId;
+    document.getElementById('chatHeader').textContent = displayName;
+
     document.querySelectorAll('.room-item').forEach(item => {
-        item.classList.toggle('active', item.textContent === roomId);
+        item.classList.toggle('active', item.dataset.roomId === roomId);
     });
 
     // Clear messages div when switching rooms
@@ -925,7 +1011,9 @@ async function loadMessages() {
 
     try {
         console.log(`[HTTP] Loading message history since=${lastMessageId}`);
-        const response = await fetch(`${API_URL}/rooms/${encodeURIComponent(currentRoom)}/messages?since=${lastMessageId}`);
+        const response = await fetch(`${API_URL}/rooms/${encodeURIComponent(currentRoom)}/messages?since=${lastMessageId}`, {
+            headers: { 'Authorization': `Bearer ${sessionToken}` }
+        });
         const data = await response.json();
 
         if (data.messages && data.messages.length > 0) {
@@ -1027,6 +1115,77 @@ async function deleteRoomAction() {
     }
 }
 
+// --- DM Modal ---
+
+function openDMModal() {
+    const modal = document.getElementById('dmModal');
+    const userList = document.getElementById('dmUserList');
+    userList.innerHTML = '<p style="color: #999;">Loading users...</p>';
+    modal.classList.add('open');
+    loadDMUserList();
+}
+
+function closeDMModal() {
+    const modal = document.getElementById('dmModal');
+    modal.classList.remove('open');
+}
+
+async function loadDMUserList() {
+    try {
+        const response = await fetch(`${API_URL}/users/list`, {
+            headers: { 'Authorization': `Bearer ${sessionToken}` }
+        });
+        const data = await response.json();
+
+        const userList = document.getElementById('dmUserList');
+        const otherUsers = data.usernames.filter(u => u !== currentUsername);
+
+        if (otherUsers.length === 0) {
+            userList.innerHTML = '<p style="color: #999;">No other users to message</p>';
+            return;
+        }
+
+        userList.innerHTML = '';
+        otherUsers.forEach(username => {
+            const item = document.createElement('div');
+            item.className = 'dm-user-item';
+            item.textContent = username;
+            item.onclick = () => startDM(username);
+            userList.appendChild(item);
+        });
+    } catch (error) {
+        console.error('Error loading user list:', error);
+        document.getElementById('dmUserList').innerHTML = '<p style="color: #999;">Failed to load users</p>';
+    }
+}
+
+async function startDM(targetUsername) {
+    try {
+        const response = await fetch(`${API_URL}/rooms/dm`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${sessionToken}`
+            },
+            body: JSON.stringify({ username: targetUsername })
+        });
+
+        const data = await response.json();
+
+        if (data.detail) {
+            alert(data.detail);
+            return;
+        }
+
+        closeDMModal();
+        await loadRooms();
+        selectRoom(data.room.room_id);
+    } catch (error) {
+        console.error('Error creating DM:', error);
+        alert('Failed to start direct message');
+    }
+}
+
 // Expose functions to window for inline event handlers
 window.logout = logout;
 window.toggleAdminPanel = toggleAdminPanel;
@@ -1048,6 +1207,8 @@ window.updateUserColorAdmin = updateUserColorAdmin;
 window.openCreateRoomModal = openCreateRoomModal;
 window.closeCreateRoomModal = closeCreateRoomModal;
 window.createRoom = createRoom;
+window.openDMModal = openDMModal;
+window.closeDMModal = closeDMModal;
 window.sendMessage = sendMessage;
 window.toggleSidebar = toggleSidebar;
 window.closeRoomSettings = closeRoomSettings;

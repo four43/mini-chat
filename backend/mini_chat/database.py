@@ -97,10 +97,22 @@ def init_db():
         conn.execute('''
             CREATE TABLE IF NOT EXISTS rooms (
                 room_id TEXT PRIMARY KEY,
+                room_type TEXT NOT NULL DEFAULT 'channel',
                 created_at TEXT NOT NULL,
                 deleted BOOLEAN NOT NULL DEFAULT 0,
                 deleted_at TEXT,
                 deleted_by TEXT
+            )
+        ''')
+
+        # Room members table (for DMs)
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS room_members (
+                room_id TEXT NOT NULL,
+                username TEXT NOT NULL,
+                PRIMARY KEY (room_id, username),
+                FOREIGN KEY (room_id) REFERENCES rooms(room_id),
+                FOREIGN KEY (username) REFERENCES users(username)
             )
         ''')
 

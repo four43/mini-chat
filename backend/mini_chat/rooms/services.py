@@ -1,13 +1,21 @@
 """Business logic for rooms."""
+import re
 from datetime import datetime
-from typing import List, Dict
+from typing import List, Dict, Optional
 import threading
 
 from ..database import get_db
 
-# Simple in-memory room registry
-ROOMS = set()
+# In-memory room registry: {room_id: room_type}
+ROOMS: Dict[str, str] = {}
 ROOMS_LOCK = threading.Lock()
+
+CHANNEL_NAME_RE = re.compile(r'^[a-z0-9]+(-[a-z0-9]+)*$')
+
+
+def validate_channel_name(name: str) -> bool:
+    """Validate a channel name: lowercase alphanumeric and hyphens only."""
+    return bool(CHANNEL_NAME_RE.match(name))
 
 
 class ChatRoom:
@@ -58,11 +66,10 @@ class ChatRoom:
 def load_rooms_from_db():
     """Load existing rooms from database."""
     with get_db() as conn:
-        # Load rooms from the rooms table (non-deleted only)
-        cursor = conn.execute('SELECT room_id FROM rooms WHERE deleted = 0')
+        cursor = conn.execute('SELECT room_id, room_type FROM rooms WHERE deleted = 0')
         with ROOMS_LOCK:
             for row in cursor:
-                ROOMS.add(row['room_id'])
+                ROOMS[row['room_id']] = row['room_type']
 
         # Also pick up any rooms that exist in messages but not in the rooms table
         cursor = conn.execute('''
@@ -74,35 +81,136 @@ def load_rooms_from_db():
         for row in cursor:
             room_id = row['room_id']
             conn.execute(
-                'INSERT INTO rooms (room_id, created_at) VALUES (?, ?)',
-                (room_id, now)
+                'INSERT INTO rooms (room_id, room_type, created_at) VALUES (?, ?, ?)',
+                (room_id, 'channel', now)
             )
             with ROOMS_LOCK:
-                ROOMS.add(room_id)
+                ROOMS[room_id] = 'channel'
         conn.commit()
 
 
+def get_user_rooms(username: str) -> List[Dict]:
+    """Get rooms visible to a user: all channels + DMs they're a member of."""
+    with get_db() as conn:
+        # Get all channels
+        cursor = conn.execute(
+            'SELECT room_id, room_type FROM rooms WHERE deleted = 0 AND room_type = ?',
+            ('channel',)
+        )
+        rooms = []
+        for row in cursor:
+            rooms.append({
+                'room_id': row['room_id'],
+                'room_type': 'channel',
+                'display_name': f"#{row['room_id']}",
+                'members': [],
+            })
+
+        # Get DMs where user is a member
+        cursor = conn.execute('''
+            SELECT r.room_id, r.room_type
+            FROM rooms r
+            JOIN room_members rm ON r.room_id = rm.room_id
+            WHERE r.deleted = 0 AND r.room_type = 'dm' AND rm.username = ?
+        ''', (username,))
+
+        for row in cursor:
+            room_id = row['room_id']
+            members = get_room_members(room_id)
+            other = [m for m in members if m != username]
+            display_name = other[0] if other else username
+            rooms.append({
+                'room_id': room_id,
+                'room_type': 'dm',
+                'display_name': display_name,
+                'members': members,
+            })
+
+        return rooms
+
+
+def get_room_members(room_id: str) -> List[str]:
+    """Get members of a room."""
+    with get_db() as conn:
+        cursor = conn.execute(
+            'SELECT username FROM room_members WHERE room_id = ?',
+            (room_id,)
+        )
+        return [row['username'] for row in cursor]
+
+
 def get_all_rooms() -> List[str]:
-    """Get list of all rooms."""
+    """Get list of all room IDs."""
     with ROOMS_LOCK:
-        return list(ROOMS)
+        return list(ROOMS.keys())
 
 
-def create_room(room_id: str) -> bool:
+def create_room(room_id: str, room_type: str = 'channel') -> bool:
     """Create a new room."""
     with ROOMS_LOCK:
         if room_id in ROOMS:
             return False
-        ROOMS.add(room_id)
+        ROOMS[room_id] = room_type
 
     now = datetime.now().isoformat()
     with get_db() as conn:
         conn.execute(
-            'INSERT OR IGNORE INTO rooms (room_id, created_at) VALUES (?, ?)',
-            (room_id, now)
+            'INSERT OR IGNORE INTO rooms (room_id, room_type, created_at) VALUES (?, ?, ?)',
+            (room_id, room_type, now)
         )
         conn.commit()
     return True
+
+
+def create_or_get_dm(user_a: str, user_b: str) -> Dict:
+    """Create or return existing DM room between two users."""
+    sorted_users = sorted([user_a, user_b])
+    room_id = f"dm-{sorted_users[0]}-{sorted_users[1]}"
+
+    with ROOMS_LOCK:
+        if room_id in ROOMS:
+            members = get_room_members(room_id)
+            other = [m for m in members if m != user_a]
+            return {
+                'room_id': room_id,
+                'room_type': 'dm',
+                'display_name': other[0] if other else user_a,
+                'members': members,
+            }
+
+    # Create new DM room
+    now = datetime.now().isoformat()
+    with get_db() as conn:
+        conn.execute(
+            'INSERT OR IGNORE INTO rooms (room_id, room_type, created_at) VALUES (?, ?, ?)',
+            (room_id, 'dm', now)
+        )
+        conn.execute(
+            'INSERT OR IGNORE INTO room_members (room_id, username) VALUES (?, ?)',
+            (room_id, sorted_users[0])
+        )
+        conn.execute(
+            'INSERT OR IGNORE INTO room_members (room_id, username) VALUES (?, ?)',
+            (room_id, sorted_users[1])
+        )
+        conn.commit()
+
+    with ROOMS_LOCK:
+        ROOMS[room_id] = 'dm'
+
+    other = [u for u in sorted_users if u != user_a]
+    return {
+        'room_id': room_id,
+        'room_type': 'dm',
+        'display_name': other[0] if other else user_a,
+        'members': sorted_users,
+    }
+
+
+def get_room_type(room_id: str) -> Optional[str]:
+    """Get the type of a room."""
+    with ROOMS_LOCK:
+        return ROOMS.get(room_id)
 
 
 def delete_room(room_id: str, deleted_by: str) -> bool:
@@ -110,7 +218,7 @@ def delete_room(room_id: str, deleted_by: str) -> bool:
     with ROOMS_LOCK:
         if room_id not in ROOMS:
             return False
-        ROOMS.discard(room_id)
+        del ROOMS[room_id]
 
     now = datetime.now().isoformat()
     with get_db() as conn:
@@ -132,4 +240,4 @@ def ensure_room_exists(room_id: str):
     """Ensure a room exists, create if it doesn't."""
     with ROOMS_LOCK:
         if room_id not in ROOMS:
-            ROOMS.add(room_id)
+            ROOMS[room_id] = 'channel'

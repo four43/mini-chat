@@ -77,6 +77,15 @@ async def delete_user(username: str, _: str = Depends(require_admin)):
     return {"status": "ok"}
 
 
+# --- User list (authenticated, non-admin) ---
+
+@router.get("/list")
+async def list_usernames(_: str = Depends(require_auth)):
+    """Get list of all usernames (for DM picker)."""
+    users = get_all_users()
+    return {"usernames": [u['username'] for u in users]}
+
+
 # --- Preferences ---
 
 @router.get("/preferences/colors")

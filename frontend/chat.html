@@ -20,11 +20,20 @@
 
         <div class="main">
             <div class="sidebar">
-                <div class="sidebar-header">
-                    <span>Chat Rooms</span>
-                    <button class="add-room-btn" onclick="openCreateRoomModal()" title="Create room">+</button>
+                <div class="sidebar-section">
+                    <div class="sidebar-section-header">
+                        <span>Channels</span>
+                        <button class="add-room-btn" onclick="openCreateRoomModal()" title="Create channel">+</button>
+                    </div>
+                    <div class="room-list" id="channelList"></div>
                 </div>
-                <div class="room-list" id="roomList"></div>
+                <div class="sidebar-section">
+                    <div class="sidebar-section-header">
+                        <span>Direct Messages</span>
+                        <button class="add-room-btn" onclick="openDMModal()" title="New message">+</button>
+                    </div>
+                    <div class="room-list" id="dmList"></div>
+                </div>
                 <div class="sidebar-footer">
                     <button class="sidebar-settings-btn" onclick="toggleSettingsPanel()">⚙️ Settings</button>
                 </div>
@@ -159,15 +168,31 @@
         <div class="room-settings-backdrop" onclick="closeCreateRoomModal()"></div>
         <div class="room-settings-content">
             <div class="room-settings-header">
-                <h3>Create Room</h3>
+                <h3>Create Channel</h3>
                 <button class="close-btn" onclick="closeCreateRoomModal()">&times;</button>
             </div>
             <div class="room-settings-body">
                 <div class="form-group">
-                    <label for="newRoomInput">Room name</label>
-                    <input type="text" id="newRoomInput" placeholder="Enter room name">
+                    <label for="newRoomInput">Channel name</label>
+                    <input type="text" id="newRoomInput" placeholder="e.g. general, my-channel"
+                           pattern="[a-z0-9]+(-[a-z0-9]+)*">
+                    <p class="form-hint">Lowercase letters, numbers, and hyphens only</p>
                 </div>
                 <button class="create-room-submit-btn" onclick="createRoom()">Create</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- DM Modal -->
+    <div id="dmModal" class="room-settings-modal">
+        <div class="room-settings-backdrop" onclick="closeDMModal()"></div>
+        <div class="room-settings-content">
+            <div class="room-settings-header">
+                <h3>New Direct Message</h3>
+                <button class="close-btn" onclick="closeDMModal()">&times;</button>
+            </div>
+            <div class="room-settings-body">
+                <div id="dmUserList" class="dm-user-list"></div>
             </div>
         </div>
     </div>
