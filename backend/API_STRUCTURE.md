@@ -71,39 +71,29 @@ backend/mini_chat/
 | GET | `/messages` | Search messages globally |
 
 **Query Parameters:**
+
 - `query`: Search text in messages
 - `room_id`: Filter by room
 - `username`: Filter by user
 - `limit`: Number of results (1-500, default 100)
 - `offset`: Results to skip (for pagination)
 
-### Admin (`/api/admin`)
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/admin/pending` | List pending users |
-| POST | `/admin/approve` | Approve pending user |
-| POST | `/admin/reject` | Reject pending user |
-| GET | `/admin/users` | List all users |
-| POST | `/admin/set-role` | Set user role |
-| DELETE | `/admin/revoke/{username}` | Revoke user access |
-| POST | `/admin/toggle-registration` | Toggle registration |
-| GET | `/admin/settings` | Get admin settings |
-| GET | `/admin/status` | Get system status |
-
 ## Design Principles
 
 ### 1. Resource-Based URLs
+
 - Uses plural nouns: `/rooms`, `/messages`, `/users`
 - HTTP methods indicate actions (GET, POST, DELETE)
 - Nested resources: `/rooms/{room_id}/messages`
 
 ### 2. Feature-Based Modules
+
 - Each domain (auth, rooms, messages, admin) has its own module
 - Separates routes, schemas, and services
 - Better for monolithic apps with multiple domains
 
 ### 3. Separation of Concerns
+
 - **Routes**: Handle HTTP requests/responses
 - **Schemas**: Pydantic models for validation
 - **Services**: Business logic & database operations
@@ -111,6 +101,7 @@ backend/mini_chat/
 - **Dependencies**: Shared auth & middleware
 
 ### 4. API-First Admin CLI
+
 - CLI uses HTTP API instead of direct database access
 - Follows best practice of treating CLI as an API client
 - Easier to extend and maintain
@@ -118,13 +109,15 @@ backend/mini_chat/
 
 ## Running the Application
 
-### Start the server:
+### Start the server
+
 ```bash
 cd backend
 python -m uvicorn mini_chat.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### Use the Admin CLI:
+### Use the Admin CLI
+
 ```bash
 # Interactive mode
 python mini_chat/admin_cli.py
@@ -153,6 +146,7 @@ python mini_chat/admin_cli.py --url http://remote-server:8000 status
 ### Backward Compatibility
 
 The API endpoints remain the same, just reorganized internally:
+
 - `/api/register/*` → `/api/auth/register/*`
 - `/api/login/*` → `/api/auth/login/*`
 - `/api/rooms` stays the same

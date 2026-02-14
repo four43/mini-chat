@@ -39,7 +39,7 @@ class AdminCLI:
 
     def list_pending(self):
         """List pending users."""
-        data = self._make_request('GET', '/api/admin/pending')
+        data = self._make_request('GET', '/api/users/pending')
         pending = data.get('pending', [])
 
         if not pending:
@@ -53,7 +53,7 @@ class AdminCLI:
 
     def list_approved(self):
         """List approved users."""
-        data = self._make_request('GET', '/api/admin/users')
+        data = self._make_request('GET', '/api/users')
         users = data.get('users', [])
 
         if not users:
@@ -69,50 +69,50 @@ class AdminCLI:
 
     def approve(self, code: str):
         """Approve a user by approval code."""
-        self._make_request('POST', '/api/admin/approve', json={'approval_code': code})
-        print(f"✓ Approved user with code: {code}")
+        self._make_request('POST', '/api/users/pending/approve', json={'approval_code': code})
+        print(f"Approved user with code: {code}")
 
     def reject(self, code: str):
         """Reject a user by approval code."""
-        self._make_request('POST', '/api/admin/reject', json={'approval_code': code})
-        print(f"✗ Rejected user with code: {code}")
+        self._make_request('POST', '/api/users/pending/reject', json={'approval_code': code})
+        print(f"Rejected user with code: {code}")
 
     def revoke(self, username: str):
         """Revoke user access."""
-        self._make_request('DELETE', f'/api/admin/revoke/{username}')
-        print(f"✗ Revoked access for user: {username}")
+        self._make_request('DELETE', f'/api/users/{username}')
+        print(f"Revoked access for user: {username}")
 
     def set_admin(self, username: str):
         """Set user as admin."""
-        self._make_request('POST', '/api/admin/set-role', json={'username': username, 'role': 'admin'})
-        print(f"👑 Set {username} as admin")
+        self._make_request('PUT', f'/api/users/{username}/role', json={'role': 'admin'})
+        print(f"Set {username} as admin")
 
     def remove_admin(self, username: str):
         """Remove admin role from user."""
-        self._make_request('POST', '/api/admin/set-role', json={'username': username, 'role': 'user'})
+        self._make_request('PUT', f'/api/users/{username}/role', json={'role': 'user'})
         print(f"Removed admin role from {username}")
 
     def toggle_reg(self):
-        """Toggle registration enabled/disabled."""
-        # Get current status
-        settings = self._make_request('GET', '/api/admin/settings')
-        current = settings.get('registration_enabled', False)
-        new_state = not current
+        """Cycle registration mode."""
+        modes = ['closed', 'invite_only', 'approval_required', 'open']
+        data = self._make_request('GET', '/api/server')
+        current = data.get('registration_mode', 'closed')
+        current_idx = modes.index(current) if current in modes else 0
+        new_mode = modes[(current_idx + 1) % len(modes)]
 
-        # Toggle it
-        self._make_request('POST', '/api/admin/toggle-registration', json={'enabled': new_state})
-        print(f"Registration: {'ENABLED' if new_state else 'DISABLED'}")
+        self._make_request('PUT', '/api/server/registration', json={'mode': new_mode})
+        print(f"Registration mode: {new_mode}")
 
     def status(self):
         """Show system status."""
-        data = self._make_request('GET', '/api/admin/status')
+        data = self._make_request('GET', '/api/server')
 
         print("\n=== System Status ===")
         print(f"Users: {data['users_count']}")
         print(f"Pending: {data['pending_count']}")
         print(f"Rooms: {data['rooms_count']}")
         print(f"Messages: {data['messages_count']}")
-        print(f"Registration: {'ENABLED' if data['registration_enabled'] else 'DISABLED'}")
+        print(f"Registration mode: {data.get('registration_mode', 'unknown')}")
 
 
 def interactive_mode(cli: AdminCLI):

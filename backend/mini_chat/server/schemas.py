@@ -1,18 +1,61 @@
 """Pydantic schemas for server info."""
+from enum import Enum
+from typing import List, Optional
 from pydantic import BaseModel
 
 
+class RegistrationMode(str, Enum):
+    closed = "closed"
+    invite_only = "invite_only"
+    approval_required = "approval_required"
+    open = "open"
+
+
 class ServerInfoResponse(BaseModel):
-    registration_enabled: bool
+    registration_mode: RegistrationMode
+    server_color: str
     users_count: int
     pending_count: int
     rooms_count: int
     messages_count: int
 
 
-class UpdateRegistrationRequest(BaseModel):
-    enabled: bool
+class UpdateRegistrationModeRequest(BaseModel):
+    mode: RegistrationMode
 
 
-class UpdateRegistrationResponse(BaseModel):
-    enabled: bool
+class UpdateRegistrationModeResponse(BaseModel):
+    mode: RegistrationMode
+
+
+class InviteTokenResponse(BaseModel):
+    token: str
+    created_by: str
+    created_at: str
+    used_by: Optional[str] = None
+    used_at: Optional[str] = None
+
+
+class InviteTokenListResponse(BaseModel):
+    invites: List[InviteTokenResponse]
+
+
+class CreateInviteResponse(BaseModel):
+    token: str
+    invite_url: str
+
+
+class RegistrationStatusResponse(BaseModel):
+    mode: RegistrationMode
+
+
+class ServerThemeResponse(BaseModel):
+    server_color: str
+
+
+class UpdateServerColorRequest(BaseModel):
+    server_color: str
+
+
+class UpdateServerColorResponse(BaseModel):
+    server_color: str

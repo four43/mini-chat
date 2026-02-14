@@ -1,5 +1,5 @@
 import './style.css';
-import { API_URL, escapeHtml } from './utils.js';
+import { API_URL, escapeHtml, loadAndApplyTheme, applyThemeColor } from './utils.js';
 
 let sessionToken = null;
 let currentUsername = null;
@@ -13,6 +13,11 @@ let reconnectAttempts = 0;
 let maxReconnectAttempts = 5;
 let reconnectTimeout = null;
 let userColors = {};  // Cache of username -> color mappings
+let serverColor = '#6366f1';  // Cached server color for theme reset
+let currentRegMode = 'closed';  // Current registration mode
+
+// Load server theme immediately (before auth check) so page renders with correct color
+loadAndApplyTheme().then(color => { serverColor = color; });
 
 // Check session and redirect if not authenticated
 checkSession();
@@ -62,7 +67,6 @@ async function initializeChatView() {
         document.getElementById('adminBadge').classList.remove('hidden');
         document.getElementById('adminPanelBtn').classList.remove('hidden');
         loadAdminSettings();
-        adminPollInterval = setInterval(loadPendingUsers, 5000);
     }
 
     await loadRooms();
@@ -111,6 +115,20 @@ function logout() {
 
 function toggleAdminPanel() {
     document.getElementById('adminPanel').classList.toggle('open');
+    updatePendingPoll();
+}
+
+function updatePendingPoll() {
+    const panelOpen = document.getElementById('adminPanel').classList.contains('open');
+    const shouldPoll = panelOpen && currentRegMode === 'approval_required';
+
+    if (shouldPoll && !adminPollInterval) {
+        loadPendingUsers();
+        adminPollInterval = setInterval(loadPendingUsers, 5000);
+    } else if (!shouldPoll && adminPollInterval) {
+        clearInterval(adminPollInterval);
+        adminPollInterval = null;
+    }
 }
 
 async function loadAdminSettings() {
@@ -120,10 +138,19 @@ async function loadAdminSettings() {
         });
         const data = await resp.json();
 
-        updateRegistrationToggle(data.registration_enabled);
+        updateRegModeSlider(data.registration_mode);
         loadPendingUsers();
         loadAllUsers();
         loadUserPreferences();
+        if (data.registration_mode === 'invite_only') {
+            loadInviteTokens();
+        }
+        // Set server color picker
+        const serverColorPicker = document.getElementById('serverColorPicker');
+        if (serverColorPicker && data.server_color) {
+            serverColorPicker.value = data.server_color;
+            serverColor = data.server_color;
+        }
     } catch (error) {
         console.error('Failed to load admin settings:', error);
     }
@@ -162,6 +189,14 @@ async function loadUserSettings() {
             if (colorInput) {
                 colorInput.value = data.color;
             }
+            // Apply user's theme color override if set
+            const themeInput = document.getElementById('userThemeColor');
+            if (themeInput) {
+                themeInput.value = data.theme_color || serverColor;
+            }
+            if (data.theme_color) {
+                applyThemeColor(data.theme_color);
+            }
         }
     } catch (error) {
         console.error('[HTTP] Error loading settings:', error);
@@ -193,22 +228,105 @@ async function updateUserColor() {
     }
 }
 
-function updateRegistrationToggle(enabled) {
-    const toggle = document.getElementById('regToggle');
-    const status = document.getElementById('regStatus');
-
-    if (enabled) {
-        toggle.classList.add('active');
-        status.textContent = 'Registration Enabled';
-    } else {
-        toggle.classList.remove('active');
-        status.textContent = 'Registration Disabled';
+async function updateUserThemeColor() {
+    const themeColor = document.getElementById('userThemeColor').value;
+    try {
+        const response = await fetch(`${API_URL}/users/${currentUsername}/preferences`, {
+            method: 'PUT',
+            headers: {
+                'Authorization': `Bearer ${sessionToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ theme_color: themeColor })
+        });
+        if (response.ok) {
+            window.location.reload();
+        }
+    } catch (error) {
+        console.error('[HTTP] Error updating theme color:', error);
+        alert('Failed to update theme color');
     }
 }
 
-async function toggleRegistration() {
-    const toggle = document.getElementById('regToggle');
-    const enabled = !toggle.classList.contains('active');
+async function resetUserThemeColor() {
+    try {
+        const response = await fetch(`${API_URL}/users/${currentUsername}/preferences`, {
+            method: 'PUT',
+            headers: {
+                'Authorization': `Bearer ${sessionToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ theme_color: '' })
+        });
+        if (response.ok) {
+            window.location.reload();
+        }
+    } catch (error) {
+        console.error('[HTTP] Error resetting theme color:', error);
+    }
+}
+
+async function updateServerColor() {
+    const color = document.getElementById('serverColorPicker').value;
+    try {
+        const response = await fetch(`${API_URL}/server/color`, {
+            method: 'PUT',
+            headers: {
+                'Authorization': `Bearer ${sessionToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ server_color: color })
+        });
+        if (response.ok) {
+            serverColor = color;
+            // Apply immediately if user has no override
+            const themeInput = document.getElementById('userThemeColor');
+            if (themeInput && themeInput.value === serverColor) {
+                applyThemeColor(color);
+            }
+        }
+    } catch (error) {
+        console.error('[HTTP] Error updating server color:', error);
+        alert('Failed to update server color');
+    }
+}
+
+const REG_MODES = ['closed', 'invite_only', 'approval_required', 'open'];
+const REG_MODE_DESCRIPTIONS = {
+    closed: 'No new registrations allowed',
+    invite_only: 'Users can register with an invite link',
+    approval_required: 'Users register and wait for admin approval',
+    open: 'Anyone can register and immediately join'
+};
+
+function updateRegModeSlider(mode) {
+    const slider = document.getElementById('regModeSlider');
+    const index = REG_MODES.indexOf(mode);
+    if (index >= 0) {
+        slider.value = index;
+    }
+    currentRegMode = mode;
+    updateRegModeLabel();
+    updateInviteSectionVisibility(mode);
+    updatePendingPoll();
+}
+
+function updateRegModeLabel() {
+    const slider = document.getElementById('regModeSlider');
+    const desc = document.getElementById('regModeDescription');
+    const mode = REG_MODES[slider.value];
+    desc.textContent = REG_MODE_DESCRIPTIONS[mode];
+
+    // Update label highlighting
+    const labels = document.querySelectorAll('.reg-mode-labels span');
+    labels.forEach((label, i) => {
+        label.classList.toggle('active', i == slider.value);
+    });
+}
+
+async function setRegistrationMode() {
+    const slider = document.getElementById('regModeSlider');
+    const mode = REG_MODES[slider.value];
 
     try {
         const resp = await fetch(`${API_URL}/server/registration`, {
@@ -217,13 +335,92 @@ async function toggleRegistration() {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${sessionToken}`
             },
-            body: JSON.stringify({ enabled })
+            body: JSON.stringify({ mode })
+        });
+        const data = await resp.json();
+        updateRegModeSlider(data.mode);
+    } catch (error) {
+        console.error('Failed to set registration mode:', error);
+    }
+}
+
+function updateInviteSectionVisibility(mode) {
+    const section = document.getElementById('inviteSection');
+    if (mode === 'invite_only') {
+        section.classList.remove('hidden');
+        loadInviteTokens();
+    } else {
+        section.classList.add('hidden');
+    }
+}
+
+async function generateInviteLink() {
+    try {
+        const resp = await fetch(`${API_URL}/server/invites`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${sessionToken}`
+            }
+        });
+        const data = await resp.json();
+        loadInviteTokens();
+    } catch (error) {
+        console.error('Failed to generate invite:', error);
+    }
+}
+
+async function loadInviteTokens() {
+    try {
+        const resp = await fetch(`${API_URL}/server/invites`, {
+            headers: { 'Authorization': `Bearer ${sessionToken}` }
         });
         const data = await resp.json();
 
-        updateRegistrationToggle(data.enabled);
+        const inviteList = document.getElementById('inviteList');
+
+        if (data.invites.length === 0) {
+            inviteList.innerHTML = '<p style="color: #999; font-size: 13px;">No invite links yet</p>';
+        } else {
+            inviteList.innerHTML = data.invites.map(inv => {
+                const inviteUrl = `${window.location.origin}/register.html?invite=${inv.token}`;
+                const status = inv.used_by
+                    ? `<span class="invite-used">Used by ${escapeHtml(inv.used_by)}</span>`
+                    : `<span class="invite-available">Available</span>`;
+                return `
+                    <div class="invite-item">
+                        <div class="invite-info">
+                            <div class="invite-url" onclick="copyInviteLink('${inviteUrl}')" title="Click to copy">${inviteUrl}</div>
+                            <div class="invite-meta">${status} &middot; by ${escapeHtml(inv.created_by)}</div>
+                        </div>
+                        ${!inv.used_by ? `<button class="delete-btn invite-delete-btn" onclick="deleteInvite('${inv.token}')">✕</button>` : ''}
+                    </div>
+                `;
+            }).join('');
+        }
     } catch (error) {
-        console.error('Failed to toggle registration:', error);
+        console.error('Failed to load invites:', error);
+    }
+}
+
+function copyInviteLink(url) {
+    navigator.clipboard.writeText(url).then(() => {
+        // Brief visual feedback
+        const el = event.target;
+        const original = el.textContent;
+        el.textContent = 'Copied!';
+        setTimeout(() => { el.textContent = original; }, 1500);
+    });
+}
+
+async function deleteInvite(token) {
+    try {
+        await fetch(`${API_URL}/server/invites/${encodeURIComponent(token)}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${sessionToken}` }
+        });
+        loadInviteTokens();
+    } catch (error) {
+        console.error('Failed to delete invite:', error);
     }
 }
 
@@ -834,12 +1031,19 @@ async function deleteRoomAction() {
 window.logout = logout;
 window.toggleAdminPanel = toggleAdminPanel;
 window.toggleSettingsPanel = toggleSettingsPanel;
-window.toggleRegistration = toggleRegistration;
+window.updateRegModeLabel = updateRegModeLabel;
+window.setRegistrationMode = setRegistrationMode;
+window.generateInviteLink = generateInviteLink;
+window.copyInviteLink = copyInviteLink;
+window.deleteInvite = deleteInvite;
 window.approveUser = approveUser;
 window.rejectUser = rejectUser;
 window.setUserRole = setUserRole;
 window.deleteUser = deleteUser;
 window.updateUserColor = updateUserColor;
+window.updateUserThemeColor = updateUserThemeColor;
+window.resetUserThemeColor = resetUserThemeColor;
+window.updateServerColor = updateServerColor;
 window.updateUserColorAdmin = updateUserColorAdmin;
 window.openCreateRoomModal = openCreateRoomModal;
 window.closeCreateRoomModal = closeCreateRoomModal;

@@ -1,5 +1,5 @@
 """Authentication API routes."""
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Query
 from typing import Optional
 
 from .schemas import (
@@ -15,12 +15,11 @@ from .services import (
     generate_challenge,
     store_challenge,
     verify_challenge,
-    is_registration_enabled,
+    is_registration_allowed,
+    get_registration_mode,
     create_pending_user,
-    get_user_credentials,
     get_user_by_credential,
     create_session_token,
-    get_user_from_session,
 )
 from ..dependencies import get_username_from_token
 
@@ -28,10 +27,16 @@ router = APIRouter(prefix="/auth", tags=["authentication"])
 
 
 @router.get("/register/begin", response_model=RegistrationBeginResponse)
-async def begin_registration():
+async def begin_registration(invite: Optional[str] = Query(None)):
     """Begin WebAuthn registration process."""
-    if not is_registration_enabled():
-        raise HTTPException(status_code=403, detail="Registration is currently disabled")
+    if not is_registration_allowed(invite_token=invite):
+        mode = get_registration_mode()
+        if mode == 'closed':
+            raise HTTPException(status_code=403, detail="Registration is currently closed")
+        elif mode == 'invite_only':
+            raise HTTPException(status_code=403, detail="Registration requires a valid invite link")
+        else:
+            raise HTTPException(status_code=403, detail="Registration is not available")
 
     challenge = generate_challenge()
     store_challenge(challenge, 'registration')
@@ -45,8 +50,14 @@ async def begin_registration():
 @router.post("/register/complete", response_model=RegistrationCompleteResponse)
 async def complete_registration(request: RegistrationCompleteRequest):
     """Complete WebAuthn registration."""
-    if not is_registration_enabled():
-        raise HTTPException(status_code=403, detail="Registration is currently disabled")
+    if not is_registration_allowed(invite_token=request.invite_token):
+        mode = get_registration_mode()
+        if mode == 'closed':
+            raise HTTPException(status_code=403, detail="Registration is currently closed")
+        elif mode == 'invite_only':
+            raise HTTPException(status_code=403, detail="Registration requires a valid invite link")
+        else:
+            raise HTTPException(status_code=403, detail="Registration is not available")
 
     if not verify_challenge(request.challenge, 'registration'):
         raise HTTPException(status_code=400, detail="Invalid or expired challenge")
@@ -55,13 +66,14 @@ async def complete_registration(request: RegistrationCompleteRequest):
         approval_code, is_auto_approved = create_pending_user(
             request.username,
             request.credentialId,
-            request.publicKey
+            request.publicKey,
+            invite_token=request.invite_token
         )
 
         if is_auto_approved:
             return RegistrationCompleteResponse(
                 status='approved',
-                approval_code='FIRST_USER_AUTO_APPROVED'
+                approval_code='AUTO_APPROVED'
             )
         else:
             return RegistrationCompleteResponse(

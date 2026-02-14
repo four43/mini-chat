@@ -1,5 +1,37 @@
 import './style.css';
-import { API_URL, showStatus, arrayBufferToBase64, base64ToArrayBuffer, friendlyError } from './utils.js';
+import { API_URL, showStatus, arrayBufferToBase64, base64ToArrayBuffer, friendlyError, loadAndApplyTheme } from './utils.js';
+
+// Get invite token from URL if present
+const urlParams = new URLSearchParams(window.location.search);
+const inviteToken = urlParams.get('invite');
+
+// Load theme and check if registration is allowed
+loadAndApplyTheme();
+checkRegistrationAccess();
+
+async function checkRegistrationAccess() {
+    try {
+        const resp = await fetch(`${API_URL}/server/registration-status`);
+        const data = await resp.json();
+
+        if (data.mode === 'closed') {
+            showStatus('registerStatus', '❌ Registration is currently closed', 'error');
+            disableRegistration();
+        } else if (data.mode === 'invite_only' && !inviteToken) {
+            showStatus('registerStatus', '❌ Registration requires an invite link', 'error');
+            disableRegistration();
+        }
+    } catch (error) {
+        console.error('Failed to check registration status:', error);
+    }
+}
+
+function disableRegistration() {
+    const registerBtn = document.querySelector('#registerForm button[onclick="register()"]');
+    const usernameInput = document.getElementById('registerUsername');
+    if (registerBtn) registerBtn.disabled = true;
+    if (usernameInput) usernameInput.disabled = true;
+}
 
 async function register() {
     const username = document.getElementById('registerUsername').value.trim();
@@ -12,7 +44,11 @@ async function register() {
     try {
         showStatus('registerStatus', 'Starting registration...', 'info');
 
-        const beginResp = await fetch(`${API_URL}/auth/register/begin`);
+        // Pass invite token as query param if present
+        const beginUrl = inviteToken
+            ? `${API_URL}/auth/register/begin?invite=${encodeURIComponent(inviteToken)}`
+            : `${API_URL}/auth/register/begin`;
+        const beginResp = await fetch(beginUrl);
         const beginData = await beginResp.json();
 
         if (beginData.detail) {
@@ -52,15 +88,22 @@ async function register() {
             }
         });
 
+        const completeBody = {
+            username: username,
+            credentialId: arrayBufferToBase64(credential.rawId),
+            publicKey: arrayBufferToBase64(credential.response.getPublicKey()),
+            challenge: beginData.challenge
+        };
+
+        // Include invite token in complete request if present
+        if (inviteToken) {
+            completeBody.invite_token = inviteToken;
+        }
+
         const completeResp = await fetch(`${API_URL}/auth/register/complete`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                username: username,
-                credentialId: arrayBufferToBase64(credential.rawId),
-                publicKey: arrayBufferToBase64(credential.response.getPublicKey()),
-                challenge: beginData.challenge
-            })
+            body: JSON.stringify(completeBody)
         });
 
         const completeData = await completeResp.json();
@@ -71,12 +114,10 @@ async function register() {
             showStatus('registerStatus',
                 `<div class="approval-code">
                     <h3>✅ Registration Complete!</h3>
-                    <p>You are the first user and have been automatically approved as an admin.</p>
-                    <p style="margin-top: 10px; font-size: 12px;">Redirecting to login...</p>
+                    <p>Your account has been approved. Redirecting to login...</p>
                 </div>`,
                 'success'
             );
-            // Auto-redirect to login after 2 seconds
             setTimeout(() => {
                 window.location.href = '/login.html';
             }, 2000);

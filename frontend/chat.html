@@ -13,11 +13,8 @@
                 <button class="menu-toggle" onclick="toggleSidebar()">☰</button>
                 <h1>Mini-Chat</h1>
             </div>
-            <div class="user-info">
-                <span id="currentUser"></span>
-                <span id="adminBadge" class="admin-badge hidden">ADMIN</span>
+            <div class="header-actions">
                 <button id="adminPanelBtn" class="admin-btn hidden" onclick="toggleAdminPanel()">Admin Panel</button>
-                <button class="logout-btn" onclick="logout()">Logout</button>
             </div>
         </div>
 
@@ -60,12 +57,32 @@
         </div>
 
         <div class="admin-section">
-            <h3>Registration Control</h3>
-            <div class="toggle-registration">
-                <div id="regToggle" class="toggle-switch" onclick="toggleRegistration()"></div>
-                <span id="regStatus">Registration Disabled</span>
+            <h3>Server Theme</h3>
+            <div class="preference-item">
+                <label for="serverColorPicker">Server color:</label>
+                <input type="color" id="serverColorPicker" value="#6366f1" onchange="updateServerColor()">
             </div>
-            <p style="font-size: 12px; color: #666;">Enable registration temporarily when friends are nearby</p>
+        </div>
+
+        <div class="admin-section">
+            <h3>Registration Mode</h3>
+            <div class="reg-mode-slider">
+                <input type="range" id="regModeSlider" min="0" max="3" step="1" value="0"
+                       oninput="updateRegModeLabel()" onchange="setRegistrationMode()">
+                <div class="reg-mode-labels">
+                    <span>Closed</span>
+                    <span>Invite</span>
+                    <span>Approval</span>
+                    <span>Open</span>
+                </div>
+                <p id="regModeDescription" class="reg-mode-description">Registration is closed</p>
+            </div>
+        </div>
+
+        <div id="inviteSection" class="admin-section hidden">
+            <h3>Invite Links</h3>
+            <button class="invite-generate-btn" onclick="generateInviteLink()">Generate Invite Link</button>
+            <div id="inviteList"></div>
         </div>
 
         <div class="admin-section">
@@ -91,11 +108,26 @@
             <button class="close-btn" onclick="toggleSettingsPanel()">✕</button>
         </div>
 
+        <div class="settings-section settings-user-info">
+            <div class="settings-user-identity">
+                <span id="currentUser" class="settings-username"></span>
+                <span id="adminBadge" class="admin-badge hidden">ADMIN</span>
+            </div>
+            <button class="settings-logout-btn" onclick="logout()">Logout</button>
+        </div>
+
         <div class="settings-section">
             <h3>Display Preferences</h3>
             <div class="preference-item">
                 <label for="userColor">Your username color:</label>
                 <input type="color" id="userColor" value="#1976d2" onchange="updateUserColor()">
+            </div>
+            <div class="preference-item">
+                <label for="userThemeColor">Theme color:</label>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <input type="color" id="userThemeColor" value="#6366f1" onchange="updateUserThemeColor()">
+                    <button class="theme-reset-btn" onclick="resetUserThemeColor()">Reset</button>
+                </div>
             </div>
         </div>
     </div>

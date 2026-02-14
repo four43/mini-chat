@@ -109,15 +109,35 @@ def init_db():
             CREATE TABLE IF NOT EXISTS user_preferences (
                 username TEXT PRIMARY KEY,
                 color TEXT NOT NULL DEFAULT '#1976d2',
+                theme_color TEXT,
                 FOREIGN KEY (username) REFERENCES users(username) ON DELETE CASCADE
             )
         ''')
 
-        # Set default settings - registration enabled by default
-        cursor = conn.execute("SELECT value FROM settings WHERE key = 'registration_enabled'")
+        # Invite tokens table for invite-only registration mode
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS invite_tokens (
+                token TEXT PRIMARY KEY,
+                created_by TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                used_by TEXT,
+                used_at TEXT,
+                FOREIGN KEY (created_by) REFERENCES users(username)
+            )
+        ''')
+
+        # Set default registration mode
+        cursor = conn.execute("SELECT value FROM settings WHERE key = 'registration_mode'")
         if not cursor.fetchone():
             conn.execute(
-                "INSERT INTO settings (key, value) VALUES ('registration_enabled', 'true')"
+                "INSERT INTO settings (key, value) VALUES ('registration_mode', 'approval_required')"
+            )
+
+        # Set default server color
+        cursor = conn.execute("SELECT value FROM settings WHERE key = 'server_color'")
+        if not cursor.fetchone():
+            conn.execute(
+                "INSERT INTO settings (key, value) VALUES ('server_color', '#6366f1')"
             )
 
         conn.commit()

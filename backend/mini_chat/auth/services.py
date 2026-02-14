@@ -1,6 +1,5 @@
 """Business logic for authentication."""
 import secrets
-import hashlib
 import base64
 from datetime import datetime
 from typing import Optional, Tuple
@@ -45,9 +44,43 @@ def verify_challenge(challenge: str, challenge_type: str, username: Optional[str
         return True
 
 
-def is_registration_enabled() -> bool:
-    """Check if registration is enabled."""
-    return get_setting('registration_enabled', 'false') == 'true'
+def get_registration_mode() -> str:
+    """Get the current registration mode."""
+    return get_setting('registration_mode', 'closed')
+
+
+def is_registration_allowed(invite_token: Optional[str] = None) -> bool:
+    """Check if registration is allowed given the current mode and optional invite token."""
+    mode = get_registration_mode()
+    if mode == 'closed':
+        return False
+    if mode == 'invite_only':
+        if not invite_token:
+            return False
+        return validate_invite_token(invite_token)
+    # approval_required and open both allow registration
+    return True
+
+
+def validate_invite_token(token: str) -> bool:
+    """Check if an invite token is valid (exists and unused)."""
+    with get_db() as conn:
+        cursor = conn.execute('''
+            SELECT token FROM invite_tokens
+            WHERE token = ? AND used_by IS NULL
+        ''', (token,))
+        return cursor.fetchone() is not None
+
+
+def consume_invite_token(token: str, username: str):
+    """Mark an invite token as used."""
+    with get_db() as conn:
+        conn.execute('''
+            UPDATE invite_tokens
+            SET used_by = ?, used_at = ?
+            WHERE token = ? AND used_by IS NULL
+        ''', (username, datetime.now().isoformat(), token))
+        conn.commit()
 
 
 def generate_approval_code() -> str:
@@ -55,13 +88,15 @@ def generate_approval_code() -> str:
     return secrets.token_hex(6).upper()
 
 
-def create_pending_user(username: str, credential_id: str, public_key: str) -> tuple[str, bool]:
+def create_pending_user(username: str, credential_id: str, public_key: str,
+                        invite_token: Optional[str] = None) -> tuple[str, bool]:
     """Create a pending user and return approval code and whether auto-approved.
 
     Returns:
-        tuple: (approval_code, is_first_user_auto_approved)
+        tuple: (approval_code, is_auto_approved)
     """
     approval_code = generate_approval_code()
+    mode = get_registration_mode()
 
     with get_db() as conn:
         # Check if this is the first user
@@ -76,14 +111,33 @@ def create_pending_user(username: str, credential_id: str, public_key: str) -> t
             ''', (username, credential_id, public_key, datetime.now().isoformat()))
             conn.commit()
             return (approval_code, True)
-        else:
-            # Subsequent users - require approval
+
+        if mode == 'open':
+            # Open mode - auto-approve immediately
             conn.execute('''
-                INSERT INTO pending_users (username, credential_id, public_key, approval_code, registered_at)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (username, credential_id, public_key, approval_code, datetime.now().isoformat()))
+                INSERT INTO users (username, credential_id, public_key, role, approved, approved_at, approved_by)
+                VALUES (?, ?, ?, 'user', 1, ?, 'OPEN_STATE')
+            ''', (username, credential_id, public_key, datetime.now().isoformat()))
             conn.commit()
-            return (approval_code, False)
+            return (approval_code, True)
+
+        if mode == 'invite_only' and invite_token:
+            # Invite-only mode with valid token - auto-approve
+            consume_invite_token(invite_token, username)
+            conn.execute('''
+                INSERT INTO users (username, credential_id, public_key, role, approved, approved_at, approved_by)
+                VALUES (?, ?, ?, 'user', 1, ?, 'INVITE')
+            ''', (username, credential_id, public_key, datetime.now().isoformat()))
+            conn.commit()
+            return (approval_code, True)
+
+        # approval_required mode - require approval
+        conn.execute('''
+            INSERT INTO pending_users (username, credential_id, public_key, approval_code, registered_at)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (username, credential_id, public_key, approval_code, datetime.now().isoformat()))
+        conn.commit()
+        return (approval_code, False)
 
 
 def get_user_credentials(username: str) -> Optional[dict]:

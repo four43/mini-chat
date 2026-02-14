@@ -1,8 +1,9 @@
 import './style.css';
-import { API_URL, showStatus, arrayBufferToBase64, base64ToArrayBuffer, friendlyError } from './utils.js';
+import { API_URL, showStatus, arrayBufferToBase64, base64ToArrayBuffer, friendlyError, loadAndApplyTheme } from './utils.js';
 
-// Check if already logged in
-checkSession();
+// Load theme, check session, then check registration mode
+loadAndApplyTheme();
+checkSession().then(() => checkRegistrationMode());
 
 async function checkSession() {
     const token = localStorage.getItem('session_token');
@@ -81,6 +82,20 @@ async function login() {
     } catch (error) {
         console.error(error);
         showStatus('authStatus', `❌ ${friendlyError(error)}`, 'error');
+    }
+}
+
+async function checkRegistrationMode() {
+    try {
+        const resp = await fetch(`${API_URL}/server/registration-status`);
+        const data = await resp.json();
+        // Show register button for approval_required and open modes
+        if (data.mode === 'approval_required' || data.mode === 'open') {
+            document.getElementById('registerSection').classList.remove('hidden');
+        }
+        // For closed and invite_only, register section stays hidden
+    } catch (error) {
+        console.error('Failed to check registration status:', error);
     }
 }
 

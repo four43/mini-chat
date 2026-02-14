@@ -29,6 +29,7 @@ class RegistrationCompleteRequest(BaseModel):
     credentialId: str
     publicKey: str
     challenge: str
+    invite_token: Optional[str] = None
 
 
 class RegistrationCompleteResponse(BaseModel):

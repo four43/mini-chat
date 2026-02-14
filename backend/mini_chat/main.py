@@ -59,12 +59,12 @@ async def startup_event():
         cursor = conn.execute('SELECT COUNT(*) as count FROM pending_users')
         pending_count = cursor.fetchone()['count']
 
-        reg_enabled = get_setting('registration_enabled', 'false') == 'true'
+        reg_mode = get_setting('registration_mode', 'closed')
 
     from .rooms.services import ROOMS
     print(f"Loaded {len(ROOMS)} rooms")
     print(f"Users: {user_count}, Pending: {pending_count}")
-    print(f"Registration: {'enabled' if reg_enabled else 'disabled'}")
+    print(f"Registration mode: {reg_mode}")
 
 
 # Register API routers

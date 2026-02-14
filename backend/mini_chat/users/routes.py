@@ -2,25 +2,21 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..dependencies import require_auth, require_admin, get_username_from_token
+from pydantic import BaseModel
 from .schemas import (
     GetPreferencesResponse,
     UpdatePreferencesRequest,
     UpdatePreferencesResponse,
+    PendingUsersResponse,
+    ApproveUserRequest,
+    RejectUserRequest,
+    UsersListResponse,
 )
 from .services import (
     get_user_preferences,
     create_default_preferences,
     update_user_preferences,
     get_all_user_preferences,
-)
-from ..admin.schemas import (
-    PendingUsersResponse,
-    ApproveUserRequest,
-    RejectUserRequest,
-    UsersListResponse,
-)
-from pydantic import BaseModel
-from ..admin.services import (
     get_pending_users,
     approve_user,
     reject_user,
@@ -130,7 +126,7 @@ async def update_user_preferences_endpoint(
         if not cursor.fetchone():
             raise HTTPException(status_code=404, detail="User not found")
 
-    update_user_preferences(target_username, request.color)
+    update_user_preferences(target_username, color=request.color, theme_color=request.theme_color)
     return UpdatePreferencesResponse(status="ok")
 
 
